@@ -8,6 +8,11 @@ import {
 } from 'react'
 import { useAuth } from '@clerk/react'
 
+import {
+  compositeMirroredVideoWithOverlay,
+  makeCaptureFilename,
+  tryShareOrDownload,
+} from './camera/saveAlignedComposite'
 import { useCamera } from './camera/useCamera'
 import { PoseOverlay } from './overlay/PoseOverlay'
 import { extractPoseGuideFromGeneratedImage } from './pose/extractPoseFromImage'
@@ -29,6 +34,12 @@ const ONBOARDING_STORAGE_KEY = 'frame-mog-onboarding-gallery-v1'
 const GALLERY_SHEET_PEEK_PX = 80
 
 type GenerationStatus = 'idle' | 'capturing' | 'generating' | 'ready' | 'failed'
+
+interface SessionCapture {
+  id: string
+  blob: Blob
+  previewUrl: string
+}
 
 function captureVideoFrame(video: HTMLVideoElement): Promise<Blob> {
   if (!video.videoWidth || !video.videoHeight) {
@@ -79,6 +90,7 @@ function galleryPoseFromResult(result: PoseVariantResult): GalleryPose {
 function App() {
   const { getToken } = useAuth()
   const videoRef = useRef<HTMLVideoElement>(null)
+  const poseOverlayCanvasRef = useRef<HTMLCanvasElement>(null)
   const { state: cameraState, request: requestCamera } = useCamera(videoRef)
   const [galleryPoses, setGalleryPoses] = useState<GalleryPose[]>([])
   /** LLM-provided person mask image for each generated pose id. */
@@ -109,6 +121,9 @@ function App() {
   const [gallerySheetMaxY, setGallerySheetMaxY] = useState(0)
   const [gallerySheetDragging, setGallerySheetDragging] = useState(false)
   const [shutterFlashActive, setShutterFlashActive] = useState(false)
+  const [sessionCaptures, setSessionCaptures] = useState<SessionCapture[]>([])
+  const [captureError, setCaptureError] = useState<string | null>(null)
+  const sessionCapturesRef = useRef<SessionCapture[]>([])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -124,6 +139,18 @@ function App() {
   useEffect(() => {
     galleryPosesRef.current = galleryPoses
   }, [galleryPoses])
+
+  useEffect(() => {
+    sessionCapturesRef.current = sessionCaptures
+  }, [sessionCaptures])
+
+  useEffect(() => {
+    return () => {
+      for (const capture of sessionCapturesRef.current) {
+        URL.revokeObjectURL(capture.previewUrl)
+      }
+    }
+  }, [])
 
   const finishOnboarding = useCallback(() => {
     if (typeof window !== 'undefined') {
@@ -167,6 +194,16 @@ function App() {
   const hasGeneratedGallery = generationStatus === 'ready'
   /** Outline only for the pose the user explicitly picked in the gallery. */
   const showPoseGuide = selectedPose !== null
+
+  const outlineReadyForSelected =
+    selectedPoseId !== null &&
+    Boolean(photoMaskById[selectedPoseId]) &&
+    !maskErrorById[selectedPoseId]
+
+  const canTakePicture =
+    cameraState.status === 'ready' && !galleryBusy && outlineReadyForSelected
+
+  const lastSessionCapture = sessionCaptures[0] ?? null
 
   const galleryVisible =
     cameraState.status === 'ready' &&
@@ -227,16 +264,43 @@ function App() {
     }
   }, [cameraState.status, galleryBusy])
 
-  const onShutterClick = useCallback(() => {
-    if (cameraState.status !== 'ready' || !videoRef.current || galleryBusy) return
+  const onShutterClick = useCallback(async () => {
+    if (!canTakePicture || !videoRef.current) return
+    const overlay = poseOverlayCanvasRef.current
+    if (!overlay) return
+
     if (
       typeof window !== 'undefined' &&
       !window.matchMedia('(prefers-reduced-motion: reduce)').matches
     ) {
       setShutterFlashActive(true)
     }
-    void handleGeneratePoses()
-  }, [cameraState.status, galleryBusy, handleGeneratePoses])
+    setCaptureError(null)
+    try {
+      const blob = await compositeMirroredVideoWithOverlay(videoRef.current, overlay)
+      const filename = makeCaptureFilename()
+      await tryShareOrDownload(blob, filename)
+      setSessionCaptures((previous) => {
+        const previewUrl = URL.createObjectURL(blob)
+        const item: SessionCapture = { id: crypto.randomUUID(), blob, previewUrl }
+        const next = [item, ...previous].slice(0, 5)
+        if (previous.length >= 5) {
+          URL.revokeObjectURL(previous[4].previewUrl)
+        }
+        return next
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not save photo.'
+      setCaptureError(message)
+      window.setTimeout(() => setCaptureError(null), 4200)
+    }
+  }, [canTakePicture])
+
+  const onSaveLastCaptureAgain = useCallback(() => {
+    const capture = lastSessionCapture
+    if (!capture) return
+    void tryShareOrDownload(capture.blob, makeCaptureFilename())
+  }, [lastSessionCapture])
 
   const onShutterFlashAnimationEnd = useCallback((event: React.AnimationEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return
@@ -331,6 +395,32 @@ function App() {
     }
   }, [galleryPoses])
 
+  const bottomHintPrimary = useMemo(() => {
+    if (captureError) return captureError
+    if (galleryBusy) return 'Hang tight while new poses are generated.'
+    if (selectedPose) {
+      if (outlineReadyForSelected) {
+        return `${selectedPose.instruction} Tap the shutter when you are aligned to save a photo.`
+      }
+      if (selectedPoseId && maskErrorById[selectedPoseId]) {
+        return selectedPose.instruction
+      }
+      return `${selectedPose.instruction} Preparing your outline…`
+    }
+    if (galleryPoses.length > 0) {
+      return 'Tap a pose in the gallery to show its outline guide.'
+    }
+    return 'Generate poses, then choose one to match.'
+  }, [
+    captureError,
+    galleryBusy,
+    selectedPose,
+    outlineReadyForSelected,
+    selectedPoseId,
+    maskErrorById,
+    galleryPoses.length,
+  ])
+
   const launchMessage =
     cameraState.status === 'idle'
       ? 'Allow camera access to place a white pose guide over your live preview.'
@@ -355,6 +445,12 @@ function App() {
     const maxY = galleryMaxYRef.current
     if (maxY > 0) setGallerySheetY(maxY)
   }, [])
+
+  useEffect(() => {
+    if (!selectedPoseId || !galleryVisible) return
+    const handle = window.setTimeout(() => collapseGallerySheet(), 0)
+    return () => clearTimeout(handle)
+  }, [selectedPoseId, galleryVisible, collapseGallerySheet])
 
   const onGallerySheetPointerDown = useCallback((event: React.PointerEvent) => {
     if (event.button !== 0) return
@@ -479,6 +575,7 @@ function App() {
 
           {cameraState.status === 'ready' && showPoseGuide && (
             <PoseOverlay
+              ref={poseOverlayCanvasRef}
               key={selectedPose.id}
               videoRef={videoRef}
               photoMaskUrl={photoMaskById[selectedPose.id] ?? null}
@@ -505,23 +602,43 @@ function App() {
               </div>
 
               <div className="camera-bottom-hint" aria-live="polite">
-                <span>
-                  {selectedPose?.instruction ??
-                    (galleryPoses.length > 0
-                      ? 'Tap a pose in the gallery to request its LLM mask guide.'
-                      : 'Generate poses, then choose one to match.')}
-                </span>
+                <span>{bottomHintPrimary}</span>
+                {lastSessionCapture ? (
+                  <small>Tap the round thumbnail to save your last capture again.</small>
+                ) : null}
               </div>
 
-              <button
-                className="shutter-button"
-                type="button"
-                onClick={() => void onShutterClick()}
-                disabled={galleryBusy}
-                aria-label={generationCopy}
-              >
-                <span />
-              </button>
+              <div className="camera-shutter-bar">
+                <div className="camera-shutter-bar__left">
+                  <button
+                    type="button"
+                    className="last-capture-thumb"
+                    aria-label="Save the last capture again"
+                    disabled={lastSessionCapture === null}
+                    onClick={() => void onSaveLastCaptureAgain()}
+                  >
+                    {lastSessionCapture ? (
+                      <img src={lastSessionCapture.previewUrl} alt="" />
+                    ) : null}
+                  </button>
+                </div>
+                <div className="camera-shutter-bar__center">
+                  <button
+                    className="shutter-button"
+                    type="button"
+                    onClick={() => void onShutterClick()}
+                    disabled={!canTakePicture}
+                    aria-label={
+                      canTakePicture
+                        ? 'Take picture and save to device'
+                        : 'Choose a pose and wait for the outline guide to take a picture'
+                    }
+                  >
+                    <span />
+                  </button>
+                </div>
+                <div className="camera-shutter-bar__right" aria-hidden="true" />
+              </div>
 
               <div
                 className={

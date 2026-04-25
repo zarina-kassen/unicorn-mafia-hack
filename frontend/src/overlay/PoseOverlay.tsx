@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { forwardRef, useCallback, useEffect, useRef } from 'react'
 import { outlineFromPersonMaskGrid, type NormPoint } from '../pose/maskToOutline'
 
-interface PoseOverlayProps {
+export interface PoseOverlayProps {
   videoRef: React.RefObject<HTMLVideoElement | null>
   /** LLM-generated white-on-transparent person mask URL. */
   photoMaskUrl?: string | null
@@ -228,13 +228,21 @@ function drawMaskSilhouette(
   ctx.restore()
 }
 
-export function PoseOverlay({
-  videoRef,
-  photoMaskUrl = null,
-  paused = false,
-}: PoseOverlayProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+export const PoseOverlay = forwardRef<HTMLCanvasElement, PoseOverlayProps>(function PoseOverlay(
+  { videoRef, photoMaskUrl = null, paused = false },
+  forwardedRef,
+) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const preparedMaskRef = useRef<PreparedMask | null>(null)
+
+  const setCanvasRef = useCallback(
+    (node: HTMLCanvasElement | null) => {
+      canvasRef.current = node
+      if (typeof forwardedRef === 'function') forwardedRef(node)
+      else if (forwardedRef) forwardedRef.current = node
+    },
+    [forwardedRef],
+  )
 
   useEffect(() => {
     if (!photoMaskUrl) {
@@ -311,5 +319,7 @@ export function PoseOverlay({
     }
   }, [videoRef, paused])
 
-  return <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none" />
-}
+  return <canvas ref={setCanvasRef} className="absolute inset-0 pointer-events-none" />
+})
+
+PoseOverlay.displayName = 'PoseOverlay'

@@ -7,12 +7,12 @@ import logging
 
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .pose_variants import router as pose_variants_router
-from .storage.database import init_db, start_cleanup_task
+from .storage.database import get_image, init_db, start_cleanup_task
 
 load_dotenv(override=True)
 
@@ -51,3 +51,14 @@ app.include_router(pose_variants_router)
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/images/{job_id}/{filename}")
+async def get_generated_image(job_id: str, filename: str) -> Response:
+    """Serve a generated image from the database."""
+    image_data = await get_image(job_id, filename)
+    if image_data:
+        data, content_type = image_data
+        return Response(content=data, media_type=content_type)
+    else:
+        raise HTTPException(status_code=404, detail="Image not found")

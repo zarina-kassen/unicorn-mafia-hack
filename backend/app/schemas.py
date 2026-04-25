@@ -52,3 +52,16 @@ class PoseVariantResult(BaseModel):
     replaceable: bool
     tier: str  # "fast" | "hq"
     model: str
+
+
+class ImageUrl(BaseModel):
+    """Image URL structure from OpenRouter response."""
+
+    url: str
+
+
+class OpenRouterImage(BaseModel):
+    """Image structure from OpenRouter chat completions response."""
+
+    type: str = "image_url"
+    image_url: ImageUrl

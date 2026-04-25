@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 
 from piccolo.columns import Bytea, Timestamp, Varchar
 from piccolo.columns.defaults.timestamp import TimestampNow
-from piccolo.table import Table, create_tables
+from piccolo.table import Table
 
 from ..config import settings
 
@@ -27,7 +27,9 @@ class GeneratedImage(Table, tablename="generated_images"):
 
 async def init_db() -> None:
     """Initialize the database schema for image storage."""
-    await create_tables(GeneratedImage, if_not_exists=True)
+    from piccolo.table import create_tables
+    
+    await asyncio.to_thread(create_tables, GeneratedImage, if_not_exists=True)
     logger.info("Database schema initialized")
 
 
@@ -35,35 +37,45 @@ async def store_image(
     job_id: str, filename: str, data: bytes, content_type: str
 ) -> str:
     """Store an image in the database and return its API URL."""
-    await GeneratedImage.insert(
-        GeneratedImage(
-            job_id=job_id,
-            filename=filename,
-            content_type=content_type,
-            data=data,
-        ).on_conflict(
-            conflict_target=[GeneratedImage.job_id, GeneratedImage.filename],
-            values={
-                GeneratedImage.data: data,
-                GeneratedImage.content_type: content_type,
-                GeneratedImage.created_at: datetime.now(),
-            },
+    try:
+        await GeneratedImage.insert(
+            GeneratedImage(
+                job_id=job_id,
+                filename=filename,
+                content_type=content_type,
+                data=data,
+            )
+        ).run()
+    except Exception:
+        # If insert fails (duplicate), update the existing record
+        await (
+            GeneratedImage.update(
+                {
+                    GeneratedImage.data: data,
+                    GeneratedImage.content_type: content_type,
+                    GeneratedImage.created_at: datetime.now(),
+                }
+            )
+            .where(
+                (GeneratedImage.job_id == job_id) & (GeneratedImage.filename == filename)
+            )
+            .run()
         )
-    )
     return f"/api/images/{job_id}/{filename}"
 
 
 async def get_image(job_id: str, filename: str) -> tuple[bytes, str] | None:
     """Retrieve an image from the database."""
     image = (
-        await GeneratedImage.exists()
+        await GeneratedImage.select()
         .where(
             (GeneratedImage.job_id == job_id) & (GeneratedImage.filename == filename)
         )
         .first()
+        .run()
     )
     if image:
-        return image.data, image.content_type
+        return image["data"], image["content_type"]
     return None
 
 

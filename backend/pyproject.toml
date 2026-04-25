@@ -12,9 +12,10 @@ dependencies = [
     "pydantic-ai-slim[openai]>=1.87.0",
     "python-dotenv>=1.0.1",
     "python-multipart>=0.0.9",
-    "piccolo>=1.0.0",
+    "piccolo[postgres]>=1.0.0",
     "asyncpg>=0.29.0",
     "clerk-backend-api>=5.0.0",
+    "openai>=1.0.0",
 ]
 
 [dependency-groups]

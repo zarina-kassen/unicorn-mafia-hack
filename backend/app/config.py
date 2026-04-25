@@ -33,13 +33,9 @@ class Settings(BaseSettings):
         default="openai/gpt-4.1-mini",
         description="Model for pose generation agent",
     )
-    fast_image_model: str = Field(
-        default="openai/gpt-4.1-mini",
-        description="Fast image generation model",
-    )
-    hq_image_model: str = Field(
-        default="openai/gpt-4.1",
-        description="High-quality image generation model",
+    image_model: str = Field(
+        default="openai/gpt-5.4-image-2",
+        description="Image generation model",
     )
 
     # Storage Configuration
@@ -92,8 +88,7 @@ settings: Final[Settings] = Settings()
 OPENROUTER_API_KEY = settings.openrouter_api_key
 OPENROUTER_BASE_URL = settings.openrouter_base_url
 AGENT_MODEL = settings.agent_model
-FAST_IMAGE_MODEL = settings.fast_image_model
-HQ_IMAGE_MODEL = settings.hq_image_model
+IMAGE_MODEL = settings.image_model
 GENERATED_TTL_SECONDS = settings.generated_ttl_seconds
 ALLOWED_ORIGINS = settings.allowed_origins_list
 CLERK_SECRET_KEY = settings.clerk_secret_key

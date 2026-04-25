@@ -22,7 +22,7 @@ def _bypass_dependencies() -> Generator[None]:
 
         return MockAgent()
 
-    from app.agent import get_pose_generation_agent
+    from app.agents import get_pose_generation_agent
 
     app.dependency_overrides[get_pose_generation_agent] = mock_agent
 

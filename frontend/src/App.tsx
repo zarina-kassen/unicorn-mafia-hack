@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { useAuth } from '@clerk/react'
 
 import { useCamera } from './camera/useCamera'
 import { PoseOverlay } from './overlay/PoseOverlay'
@@ -16,11 +17,13 @@ import {
   createPoseVariantJob,
   type PoseVariantResult,
   subscribePoseVariantJob,
+  uploadOnboardingGalleryImages,
 } from './backend/client'
 import { Button } from '@/components/ui/button'
 import './App.css'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? ''
+const ONBOARDING_STORAGE_KEY = 'frame-mog-onboarding-gallery-v1'
 
 /** Visible strip when the pose gallery sheet is collapsed (px). */
 const GALLERY_SHEET_PEEK_PX = 80
@@ -74,6 +77,7 @@ function galleryPoseFromResult(result: PoseVariantResult): GalleryPose {
 }
 
 function App() {
+  const { getToken } = useAuth()
   const videoRef = useRef<HTMLVideoElement>(null)
   const { state: cameraState, request: requestCamera } = useCamera(videoRef)
   const [galleryPoses, setGalleryPoses] = useState<GalleryPose[]>([])
@@ -87,6 +91,11 @@ function App() {
   const [generationJobId, setGenerationJobId] = useState<string | null>(null)
   const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 6 })
   const [generationError, setGenerationError] = useState<string | null>(null)
+  const [onboardingDone, setOnboardingDone] = useState(false)
+  const [onboardingFiles, setOnboardingFiles] = useState<File[]>([])
+  const [onboardingBusy, setOnboardingBusy] = useState(false)
+  const [onboardingError, setOnboardingError] = useState<string | null>(null)
+  const [allowGalleryLearning, setAllowGalleryLearning] = useState(true)
 
   const gallerySheetRef = useRef<HTMLElement>(null)
   const galleryMaxYRef = useRef(0)
@@ -102,6 +111,12 @@ function App() {
   const [shutterFlashActive, setShutterFlashActive] = useState(false)
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
+    const alreadyDone = window.localStorage.getItem(ONBOARDING_STORAGE_KEY) === 'done'
+    setOnboardingDone(alreadyDone)
+  }, [])
+
+  useEffect(() => {
     gallerySheetYRef.current = gallerySheetY
   }, [gallerySheetY])
 
@@ -109,6 +124,39 @@ function App() {
   useEffect(() => {
     galleryPosesRef.current = galleryPoses
   }, [galleryPoses])
+
+  const finishOnboarding = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(ONBOARDING_STORAGE_KEY, 'done')
+    }
+    setOnboardingDone(true)
+  }, [])
+
+  const handleOnboardingFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const next = Array.from(event.target.files ?? []).slice(0, 5)
+    setOnboardingFiles(next)
+    setOnboardingError(null)
+  }, [])
+
+  const handleOnboardingSubmit = useCallback(async () => {
+    if (onboardingFiles.length === 0 || onboardingBusy || !allowGalleryLearning) return
+    setOnboardingBusy(true)
+    setOnboardingError(null)
+    try {
+      const result = await uploadOnboardingGalleryImages(onboardingFiles, BACKEND_URL, getToken, {
+        allowCameraRoll: allowGalleryLearning,
+      })
+      if (!result.ok) {
+        setOnboardingError(result.message)
+        return
+      }
+      finishOnboarding()
+    } catch (err) {
+      setOnboardingError(err instanceof Error ? err.message : 'Onboarding upload failed.')
+    } finally {
+      setOnboardingBusy(false)
+    }
+  }, [allowGalleryLearning, finishOnboarding, getToken, onboardingBusy, onboardingFiles])
 
   const selectedPose = useMemo((): GalleryPose | null => {
     if (!selectedPoseId) return null
@@ -363,6 +411,60 @@ function App() {
       return prev > maxY / 2 ? maxY : 0
     })
   }, [])
+
+  if (!onboardingDone) {
+    return (
+      <div className="min-h-screen min-h-dvh w-full max-w-none overflow-x-hidden">
+        <main className="stage-two-shell">
+          <section className="camera-preview">
+            <div className="camera-launch">
+              <div className="launch-mark" aria-hidden="true" />
+              <p className="launch-kicker">Taste onboarding</p>
+              <h1>Pick up to 5 gallery photos.</h1>
+              <p>
+                We use your selected images to learn your style and improve generated pose prompts
+                for this account.
+              </p>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                onChange={handleOnboardingFileChange}
+                disabled={onboardingBusy}
+              />
+              <p>{onboardingFiles.length}/5 selected</p>
+              <label className="mt-2 flex max-w-[min(340px,92vw)] cursor-pointer items-start gap-2 text-left text-[0.9rem] leading-snug text-cam-ink-muted">
+                <input
+                  type="checkbox"
+                  className="mt-1 shrink-0"
+                  checked={allowGalleryLearning}
+                  onChange={(event) => setAllowGalleryLearning(event.target.checked)}
+                  disabled={onboardingBusy}
+                />
+                <span>
+                  Allow using my selected photos to learn my style for pose suggestions (uploaded to
+                  the server for analysis).
+                </span>
+              </label>
+              {onboardingError && <p className="error">{onboardingError}</p>}
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  onClick={() => void handleOnboardingSubmit()}
+                  disabled={onboardingBusy || onboardingFiles.length === 0 || !allowGalleryLearning}
+                >
+                  {onboardingBusy ? 'Uploading...' : 'Use selected photos'}
+                </Button>
+                <Button type="button" variant="outline" onClick={finishOnboarding} disabled={onboardingBusy}>
+                  Skip for now
+                </Button>
+              </div>
+            </div>
+          </section>
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen min-h-dvh w-full max-w-none overflow-x-hidden">

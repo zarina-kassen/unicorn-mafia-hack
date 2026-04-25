@@ -207,12 +207,17 @@ function App() {
             return
           }
 
-        if (event.job.status === 'failed') {
-          setGalleryPoses(GALLERY_POSES)
-          setSelectedPoseId(GALLERY_POSES[0].id)
+          if (event.job.status === 'failed') {
+            setGalleryPoses(GALLERY_POSES)
+            setSelectedPoseId(GALLERY_POSES[0].id)
+            setGenerationStatus('failed')
+            setGenerationJobId(null)
+            setGenerationError(event.job.error ?? 'Pose generation failed.')
+          }
+        } catch (err) {
           setGenerationStatus('failed')
           setGenerationJobId(null)
-          setGenerationError(event.job.error ?? 'Pose generation failed.')
+          setGenerationError(err instanceof Error ? err.message : 'Could not update gallery.')
         }
       },
       () => {

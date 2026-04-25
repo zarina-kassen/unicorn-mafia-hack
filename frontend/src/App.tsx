@@ -254,11 +254,13 @@ function App() {
           ? 'Regenerate'
           : 'Generate'
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const collapseGallerySheet = useCallback(() => {
     const maxY = galleryMaxYRef.current
     if (maxY > 0) setGallerySheetY(maxY)
   }, [])
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const onGallerySheetPointerDown = useCallback((event: React.PointerEvent) => {
     if (event.button !== 0) return
     galleryDragRef.current = {
@@ -270,6 +272,7 @@ function App() {
     event.currentTarget.setPointerCapture(event.pointerId)
   }, [])
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const onGallerySheetPointerMove = useCallback((event: React.PointerEvent) => {
     const drag = galleryDragRef.current
     if (!drag || event.pointerId !== drag.pointerId) return
@@ -280,6 +283,7 @@ function App() {
     setGallerySheetY(next)
   }, [])
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const onGallerySheetPointerUp = useCallback((event: React.PointerEvent) => {
     const drag = galleryDragRef.current
     if (!drag || event.pointerId !== drag.pointerId) return
@@ -303,6 +307,7 @@ function App() {
     })
   }, [])
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const onGallerySheetPointerCancel = useCallback((event: React.PointerEvent) => {
     const drag = galleryDragRef.current
     if (!drag || event.pointerId !== drag.pointerId) return

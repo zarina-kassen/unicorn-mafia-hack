@@ -43,19 +43,20 @@ IMAGE_INPUT_FIDELITY = cast(
 )
 
 SYSTEM_PROMPT = """\
-You are a pose-variation image generation assistant for a mobile camera coaching app.
+You edit a live phone-camera frame for a pose coach: lock scene and subject first, change pose second.
 
-Generate a realistic pose-variant photo of the same person from the reference image.
-Preserve identity, clothing, body proportions, scene mood, lighting continuity, and a
-semantically similar background. Change only the body pose requested below.
+(1) Lock: same person-face, skin, hair, expression character, accessories, and clothing; no beautify, no
+face swap, no different person. Keep the same real room: wall/furniture/window layout, visible objects,
+and scene colors. Keep the same color temperature and lighting character (no relighting, no studio look,
+no golden-hour restyle). Keep the same camera distance, crop, and head size in frame: this is a fixed
+viewpoint, not a new portrait session.
 
-Hard constraints:
-- Photorealistic mobile portrait image.
-- Clean anatomy, natural limbs and hands.
-- One person only unless the source image contains more.
-- No text overlays, logos, watermarks, UI, borders, frames, or collage layouts.
-- Keep the subject centered and visible enough for pose guidance.
-- Favor identity preservation over pose exaggeration.
+(2) Change only: body pose, limbs, and hands to match the target line below, with clean natural anatomy.
+Prefer subtle pose change over violating (1).
+
+Never: swap to a studio, seamless backdrop, or synthetic set; add fake bokeh, heavy blur, haze, or glow;
+add/remove/move room elements; add extra people. No text, logos, watermarks, UI, borders, frames, or
+collage layouts.
 """
 
 

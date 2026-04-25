@@ -104,20 +104,50 @@ jobs:
   # ──────────────────────────────────────────────
   # Deploy to Render (main branch only)
   # ──────────────────────────────────────────────
-  deploy-backend:
-    name: "Deploy · Backend"
+  deploy-storage:
+    name: "Deploy · Storage"
     needs: [backend-lint, backend-test]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      deployments: write
     steps:
-      - name: Trigger Render deploy
-        run: curl -sf "${{ secrets.RENDER_BACKEND_DEPLOY_HOOK }}"
+      - uses: JorgeLNJunior/render-deploy@v1.5.0
+        with:
+          service_id: ${{ secrets.RENDER_STORAGE_SERVICE_ID }}
+          api_key: ${{ secrets.RENDER_API_KEY }}
+          wait_deploy: true
+          github_deployment: true
+          deployment_environment: "storage"
+
+  deploy-backend:
+    name: "Deploy · Backend"
+    needs: [backend-lint, backend-test, deploy-storage]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      deployments: write
+    steps:
+      - uses: JorgeLNJunior/render-deploy@v1.5.0
+        with:
+          service_id: ${{ secrets.RENDER_BACKEND_SERVICE_ID }}
+          api_key: ${{ secrets.RENDER_API_KEY }}
+          wait_deploy: true
+          github_deployment: true
+          deployment_environment: "production"
 
   deploy-frontend:
     name: "Deploy · Frontend"
     needs: [frontend-lint, frontend-build]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      deployments: write
     steps:
-      - name: Trigger Render deploy
-        run: curl -sf "${{ secrets.RENDER_FRONTEND_DEPLOY_HOOK }}"
+      - uses: JorgeLNJunior/render-deploy@v1.5.0
+        with:
+          service_id: ${{ secrets.RENDER_FRONTEND_SERVICE_ID }}
+          api_key: ${{ secrets.RENDER_API_KEY }}
+          wait_deploy: true
+          github_deployment: true
+          deployment_environment: "production"

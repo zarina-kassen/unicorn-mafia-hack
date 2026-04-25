@@ -22,6 +22,9 @@ import { Button } from '@/components/ui/button'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? ''
 
+/** Visible strip when the pose gallery sheet is collapsed (px). */
+const GALLERY_SHEET_PEEK_PX = 80
+
 type AlignmentStatus = 'finding' | 'adjusting' | 'close'
 type GenerationStatus = 'idle' | 'capturing' | 'generating' | 'ready' | 'failed'
 
@@ -94,6 +97,27 @@ function App() {
   const [generationJobId, setGenerationJobId] = useState<string | null>(null)
   const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 6 })
   const [generationError, setGenerationError] = useState<string | null>(null)
+
+  const gallerySheetRef = useRef<HTMLElement>(null)
+  const galleryMaxYRef = useRef(0)
+  const gallerySheetYRef = useRef(0)
+  const galleryDragRef = useRef<{
+    pointerId: number
+    startClientY: number
+    startTranslate: number
+  } | null>(null)
+  const [gallerySheetY, setGallerySheetY] = useState(0)
+  const [gallerySheetMaxY, setGallerySheetMaxY] = useState(0)
+  const [gallerySheetDragging, setGallerySheetDragging] = useState(false)
+
+  useEffect(() => {
+    gallerySheetYRef.current = gallerySheetY
+  }, [gallerySheetY])
+
+  const galleryPosesRef = useRef<GalleryPose[]>([])
+  useEffect(() => {
+    galleryPosesRef.current = galleryPoses
+  }, [galleryPoses])
 
   const landmarkerEnabled = cameraState.status === 'ready'
   const selectedPose = useMemo(

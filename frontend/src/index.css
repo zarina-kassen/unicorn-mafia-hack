@@ -407,6 +407,19 @@
   @apply block px-2.5 pb-[11px] pt-[9px] text-[0.78rem] font-[850] leading-[1.12] text-white/[0.88];
 }
 
+.memory-seed-row,
+.memory-controls-row {
+  @apply flex items-center gap-2 px-4 mb-2.5;
+}
+
+.memory-controls-row {
+  @apply flex-wrap;
+}
+
+.memory-status {
+  @apply px-4 pb-2 text-[0.75rem] text-white/75;
+}
+
 /* ==========================================================================
    Keyframes
    ========================================================================== */

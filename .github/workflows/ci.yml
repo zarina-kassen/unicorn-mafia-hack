@@ -100,3 +100,24 @@ jobs:
 
       - name: TypeScript + Vite build
         run: bun run build
+
+  # ──────────────────────────────────────────────
+  # Deploy to Render (main branch only)
+  # ──────────────────────────────────────────────
+  deploy-backend:
+    name: "Deploy · Backend"
+    needs: [backend-lint, backend-test]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deploy
+        run: curl -s "${{ secrets.RENDER_BACKEND_DEPLOY_HOOK }}"
+
+  deploy-frontend:
+    name: "Deploy · Frontend"
+    needs: [frontend-lint, frontend-build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deploy
+        run: curl -s "${{ secrets.RENDER_FRONTEND_DEPLOY_HOOK }}"

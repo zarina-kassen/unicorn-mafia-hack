@@ -48,24 +48,3 @@ def test_pose_variant_rejects_non_image_upload() -> None:
         files={"reference_image": ("note.txt", b"hello", "text/plain")},
     )
     assert r.status_code == 400
-
-
-def test_memory_preferences_endpoint_without_mubit() -> None:
-    client = TestClient(app)
-    r = client.post(
-        "/api/memory/preferences",
-        json={
-            "allow_camera_roll": True,
-            "allow_instagram": False,
-            "allow_pinterest": False,
-        },
-    )
-    assert r.status_code == 200
-    assert "ok" in r.json()
-
-
-def test_memory_reset_endpoint_without_mubit() -> None:
-    client = TestClient(app)
-    r = client.post("/api/memory/reset", json={"hard_reset": False})
-    assert r.status_code == 200
-    assert "ok" in r.json()

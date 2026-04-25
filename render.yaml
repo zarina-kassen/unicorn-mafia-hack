@@ -18,14 +18,18 @@ services:
         sync: false
       - key: ALLOWED_ORIGINS
         sync: false
-      - key: GENERATED_IMAGE_DIR
-        value: /data/generated
       - key: AGENT_MODEL
         value: gateway/openai:gpt-5.3
-    disk:
-      name: generated-images
-      mountPath: /data/generated
-      sizeGB: 1
+      - key: S3_ENDPOINT_URL
+        sync: false # e.g. https://frame-mog-storage.onrender.com:3900
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_BUCKET
+        value: generated-images
+      - key: S3_PUBLIC_URL
+        sync: false # Public URL prefix for serving images
 
   # ── Frontend: Vite + React static site ──
   - type: web
@@ -47,3 +51,26 @@ services:
       - path: /*
         name: X-Frame-Options
         value: DENY
+
+  # ── Object Storage: Garage S3-compatible ──
+  - type: web
+    name: frame-mog-storage
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./storage/Dockerfile
+    dockerContext: ./storage
+    envVars:
+      - key: GARAGE_RPC_SECRET
+        generateValue: true
+      - key: GARAGE_ADMIN_TOKEN
+        generateValue: true
+      - key: GARAGE_METRICS_TOKEN
+        generateValue: true
+      - key: GARAGE_S3_ACCESS_KEY_ID
+        generateValue: true
+      - key: GARAGE_S3_SECRET_ACCESS_KEY
+        generateValue: true
+    disk:
+      name: garage-data
+      mountPath: /var/lib/garage
+      sizeGB: 10

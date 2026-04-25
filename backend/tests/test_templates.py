@@ -1,5 +1,7 @@
 """Smoke tests for the templates and health endpoints."""
 
+from collections.abc import Generator
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -9,7 +11,7 @@ from app.templates import TEMPLATE_IDS
 
 
 @pytest.fixture(autouse=True)
-def _bypass_auth() -> None:  # type: ignore[misc]
+def _bypass_auth() -> Generator[None]:
     """Replace the Clerk auth dependency with a no-op for tests."""
     app.dependency_overrides[require_auth] = lambda: "test-user-id"
     yield

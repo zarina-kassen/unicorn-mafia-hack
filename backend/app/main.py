@@ -7,10 +7,11 @@ import os
 from functools import lru_cache
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic_ai import Agent
 
+from .auth import require_auth
 from .schemas import GuidanceResponse, Landmark, PoseContext, TemplateMeta
 from .templates import TEMPLATES
 
@@ -89,7 +90,7 @@ _allowed_origins = os.environ.get(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in _allowed_origins if o.strip()],
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -101,12 +102,12 @@ def health() -> dict[str, str]:
 
 
 @app.get("/api/templates", response_model=list[TemplateMeta])
-def list_templates() -> list[TemplateMeta]:
+def list_templates(_user_id: str = Depends(require_auth)) -> list[TemplateMeta]:
     return TEMPLATES
 
 
 @app.post("/api/guidance", response_model=GuidanceResponse)
-async def guidance(ctx: PoseContext) -> GuidanceResponse:
+async def guidance(ctx: PoseContext, _user_id: str = Depends(require_auth)) -> GuidanceResponse:
     try:
         result = await get_agent().run(_render_prompt(ctx))
     except Exception as exc:  # noqa: BLE001 — surface all provider errors uniformly

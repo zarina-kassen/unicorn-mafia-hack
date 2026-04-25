@@ -10,6 +10,7 @@ dependencies = [
     "pydantic>=2.8",
     "pydantic-ai-slim[openai]>=1.16",
     "python-dotenv>=1.0.1",
+    "clerk-backend-api>=5.0",
 ]
 
 [dependency-groups]

@@ -1,4 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Show,
+  SignInButton,
+  SignUpButton,
+  UserButton,
+  useAuth,
+} from '@clerk/react'
 
 import { useCamera } from './camera/useCamera'
 import type { NormalizedLandmark } from './pose/mediapipe'
@@ -20,6 +27,7 @@ function formatConfidence(score: number): string {
 }
 
 function App() {
+  const { getToken } = useAuth()
   const videoRef = useRef<HTMLVideoElement>(null)
   const { state: cameraState, request: requestCamera } = useCamera(videoRef)
   const [paused, setPaused] = useState(false)
@@ -53,13 +61,22 @@ function App() {
     handleLandmarks,
   )
 
-  const clientRef = useRef(createGuidanceClient(BACKEND_URL))
+  const getTokenRef = useRef(getToken)
   useEffect(() => {
-    const client = clientRef.current
+    getTokenRef.current = getToken
+  }, [getToken])
+  const clientRef = useRef<ReturnType<typeof createGuidanceClient> | null>(null)
+  useEffect(() => {
+    const client = createGuidanceClient(
+      BACKEND_URL,
+      () => getTokenRef.current(),
+    )
+    clientRef.current = client
     const unsubscribe = client.subscribe(setGuidance)
     return () => {
       unsubscribe()
       client.stop()
+      clientRef.current = null
     }
   }, [])
 
@@ -80,7 +97,7 @@ function App() {
       local_confidence: localMatch.score,
       image_wh: wh,
     }
-    clientRef.current.submit(payload)
+    clientRef.current?.submit(payload)
   }, [liveLandmarks, localMatch, paused])
 
   // If the agent suggests a different template with high confidence, prefer it.
@@ -103,9 +120,32 @@ function App() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <h1>frame-mog</h1>
-        <p className="subtitle">Live pose outline camera</p>
+        <div>
+          <h1>frame-mog</h1>
+          <p className="subtitle">Live pose outline camera</p>
+        </div>
+        <Show when="signed-in">
+          <UserButton />
+        </Show>
       </header>
+
+      <Show
+        when="signed-in"
+        fallback={
+          <div className="auth-gate">
+            <h2>Welcome to frame-mog</h2>
+            <p>Sign in to access the live pose outline camera.</p>
+            <div className="auth-buttons">
+              <SignInButton mode="modal">
+                <button type="button">Sign in</button>
+              </SignInButton>
+              <SignUpButton mode="modal">
+                <button type="button" className="secondary">Sign up</button>
+              </SignUpButton>
+            </div>
+          </div>
+        }
+      >
 
       <main className="stage">
         <div className="preview">
@@ -179,6 +219,8 @@ function App() {
           )}
         </aside>
       </main>
+
+      </Show>
     </div>
   )
 }

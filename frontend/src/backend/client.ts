@@ -32,9 +32,12 @@ export interface GuidanceClient {
  *   guidance never overwrites fresh guidance.
  * - Never throws at the caller: network errors are swallowed and subscribers
  *   simply stop receiving updates until the next successful response.
+ * - Accepts a `getToken` callback (from Clerk's `useAuth`) so every request
+ *   includes the session JWT in the Authorization header.
  */
 export function createGuidanceClient(
   baseUrl: string,
+  getToken: () => Promise<string | null>,
   intervalMs = 1500,
   timeoutMs = 3000,
 ): GuidanceClient {
@@ -55,9 +58,16 @@ export function createGuidanceClient(
     inflight = new AbortController()
     const timeoutId = setTimeout(() => inflight?.abort(), timeoutMs)
     try {
+      const token = await getToken()
+      const headers: Record<string, string> = {
+        'content-type': 'application/json',
+      }
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
       const res = await fetch(`${baseUrl}/api/guidance`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
         signal: inflight.signal,
       })

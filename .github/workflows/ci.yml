@@ -34,13 +34,13 @@ jobs:
         run: uv sync --locked
 
       - name: Ruff check
-        run: uvx ruff check .
+        run: uv run ruff check .
 
       - name: Ruff format check
-        run: uvx ruff format --check .
+        run: uv run ruff format --check .
 
       - name: Type check (ty)
-        run: uvx ty check --output-format github .
+        run: uv run ty check --output-format github .
 
   backend-test:
     name: "Backend · Test"

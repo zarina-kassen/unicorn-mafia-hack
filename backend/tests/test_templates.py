@@ -48,6 +48,3 @@ def test_pose_variant_rejects_non_image_upload() -> None:
         files={"reference_image": ("note.txt", b"hello", "text/plain")},
     )
     assert r.status_code == 400
-
-
-

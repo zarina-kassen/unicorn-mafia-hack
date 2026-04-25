@@ -61,15 +61,13 @@ function App() {
     handleLandmarks,
   )
 
-  const clientRef = useRef<ReturnType<typeof createGuidanceClient> | null>(null)
+  const clientRef = useRef(createGuidanceClient(BACKEND_URL))
   useEffect(() => {
-    const client = createGuidanceClient(BACKEND_URL)
-    clientRef.current = client
+    const client = clientRef.current
     const unsubscribe = client.subscribe(setGuidance)
     return () => {
       unsubscribe()
       client.stop()
-      clientRef.current = null
     }
   }, [])
 

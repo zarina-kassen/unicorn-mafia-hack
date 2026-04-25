@@ -33,3 +33,18 @@ def test_health_endpoint() -> None:
     body = r.json()
     assert body["status"] == "ok"
     assert "model" in body
+
+
+def test_pose_variant_missing_job() -> None:
+    client = TestClient(app)
+    r = client.get("/api/pose-variants/not-a-job")
+    assert r.status_code == 404
+
+
+def test_pose_variant_rejects_non_image_upload() -> None:
+    client = TestClient(app)
+    r = client.post(
+        "/api/pose-variants",
+        files={"reference_image": ("note.txt", b"hello", "text/plain")},
+    )
+    assert r.status_code == 400

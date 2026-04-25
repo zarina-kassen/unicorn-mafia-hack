@@ -51,3 +51,25 @@ class TemplateMeta(BaseModel):
     name: str
     description: str
     posture: str  # "standing" | "seated" | "leaning"
+
+
+class PoseVariantResult(BaseModel):
+    """A generated pose variant returned to the frontend gallery."""
+
+    id: str
+    title: str
+    instruction: str
+    image_url: str
+    pose_template_id: str
+    replaceable: bool = False
+
+
+class PoseVariantJob(BaseModel):
+    """Status payload for asynchronous pose-variant generation."""
+
+    job_id: str
+    status: str  # "queued" | "generating" | "ready" | "failed"
+    progress: int = Field(ge=0, le=10)
+    total: int = 10
+    results: list[PoseVariantResult] = Field(default_factory=list)
+    error: str | None = None

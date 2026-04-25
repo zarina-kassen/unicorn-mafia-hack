@@ -1,51 +1,102 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  Show,
-  SignInButton,
-  SignUpButton,
-  UserButton,
-} from '@clerk/react'
 
 import { useCamera } from './camera/useCamera'
 import type { NormalizedLandmark } from './pose/mediapipe'
 import { usePoseLandmarker } from './pose/usePoseLandmarker'
-import { TEMPLATES, getTemplate, type PoseTemplate } from './pose/templates'
 import { matchTemplate } from './pose/matcher'
 import { PoseOverlay } from './overlay/PoseOverlay'
-import { useGuidance } from './hooks/useGuidance'
-import type { PoseContextPayload } from './api/types'
+import { GALLERY_POSES, type GalleryPose } from './pose/galleryTargets'
+import {
+  createPoseVariantJob,
+  getPoseVariantJob,
+  type PoseVariantResult,
+} from './backend/client'
 import { Button } from '@/components/ui/button'
 
-function formatConfidence(score: number): string {
-  return `${Math.round(score * 100)}%`
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? ''
+
+type AlignmentStatus = 'finding' | 'adjusting' | 'close'
+type GenerationStatus = 'idle' | 'capturing' | 'generating' | 'ready' | 'failed'
+
+interface AlignmentState {
+  status: AlignmentStatus
+  score: number
+}
+
+function getAlignmentCopy(status: AlignmentStatus): string {
+  if (status === 'close') return 'Close match'
+  if (status === 'adjusting') return 'Adjust your pose'
+  return 'Step into frame'
+}
+
+function captureVideoFrame(video: HTMLVideoElement): Promise<Blob> {
+  if (!video.videoWidth || !video.videoHeight) {
+    return Promise.reject(new Error('Camera frame is not ready yet.'))
+  }
+
+  const canvas = document.createElement('canvas')
+  canvas.width = video.videoWidth
+  canvas.height = video.videoHeight
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return Promise.reject(new Error('Could not capture camera frame.'))
+
+  // Match the mirrored selfie preview the user sees.
+  ctx.translate(canvas.width, 0)
+  ctx.scale(-1, 1)
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) resolve(blob)
+        else reject(new Error('Could not encode camera frame.'))
+      },
+      'image/jpeg',
+      0.92,
+    )
+  })
+}
+
+function backendAssetUrl(path: string): string {
+  if (/^https?:\/\//.test(path)) return path
+  return `${BACKEND_URL}${path}`
+}
+
+function galleryPoseFromResult(result: PoseVariantResult): GalleryPose {
+  const templateSource =
+    GALLERY_POSES.find((pose) => pose.id === result.pose_template_id) ??
+    GALLERY_POSES.find((pose) => pose.id === result.id) ??
+    GALLERY_POSES[0]
+
+  return {
+    ...templateSource,
+    id: result.id,
+    title: result.title,
+    instruction: result.instruction,
+    imageSrc: backendAssetUrl(result.image_url),
+    replaceableAsset: result.replaceable,
+  }
 }
 
 function App() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const { state: cameraState, request: requestCamera } = useCamera(videoRef)
-  const [paused, setPaused] = useState(false)
+  const [galleryPoses, setGalleryPoses] = useState<GalleryPose[]>(GALLERY_POSES)
+  const [selectedPoseId, setSelectedPoseId] = useState(GALLERY_POSES[0].id)
   const [liveLandmarks, setLiveLandmarks] = useState<NormalizedLandmark[] | null>(null)
-  const [localMatch, setLocalMatch] = useState<{
-    template: PoseTemplate
-    score: number
-    personVisible: boolean
-  }>(() => ({ template: TEMPLATES[0], score: 0, personVisible: false }))
-  const { submit: submitGuidance, guidance } = useGuidance()
+  const [generationStatus, setGenerationStatus] = useState<GenerationStatus>('idle')
+  const [generationJobId, setGenerationJobId] = useState<string | null>(null)
+  const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 10 })
+  const [generationError, setGenerationError] = useState<string | null>(null)
 
-  const landmarkerEnabled = cameraState.status === 'ready' && !paused
+  const landmarkerEnabled = cameraState.status === 'ready'
+  const selectedPose = useMemo(
+    () => galleryPoses.find((pose) => pose.id === selectedPoseId) ?? galleryPoses[0],
+    [galleryPoses, selectedPoseId],
+  )
 
   const handleLandmarks = useCallback((lm: NormalizedLandmark[] | null) => {
     setLiveLandmarks(lm)
-    if (!lm) {
-      setLocalMatch((prev) => ({ ...prev, score: 0, personVisible: false }))
-      return
-    }
-    const result = matchTemplate(lm, TEMPLATES)
-    setLocalMatch({
-      template: getTemplate(result.templateId),
-      score: result.score,
-      personVisible: result.personVisible,
-    })
   }, [])
 
   const { error: landmarkerError } = usePoseLandmarker(
@@ -54,165 +105,261 @@ function App() {
     handleLandmarks,
   )
 
+  const alignment = useMemo<AlignmentState>(() => {
+    if (cameraState.status !== 'ready' || !liveLandmarks) {
+      return { status: 'finding', score: 0 }
+    }
+
+    const result = matchTemplate(liveLandmarks, [selectedPose.template])
+    const status: AlignmentStatus = !result.personVisible
+      ? 'finding'
+      : result.score >= 0.92
+        ? 'close'
+        : 'adjusting'
+
+    return {
+      status,
+      score: result.score,
+    }
+  }, [cameraState.status, liveLandmarks, selectedPose])
+
+  const galleryLoop = useMemo(() => [...galleryPoses, ...galleryPoses], [galleryPoses])
+  const galleryBusy = generationStatus === 'capturing' || generationStatus === 'generating'
+  const hasGeneratedGallery = generationStatus === 'ready'
+
+  const handleGeneratePoses = useCallback(async () => {
+    if (cameraState.status !== 'ready' || !videoRef.current || galleryBusy) return
+
+    setGenerationStatus('capturing')
+    setGenerationError(null)
+    setGenerationProgress({ current: 0, total: 10 })
+
+    try {
+      const frame = await captureVideoFrame(videoRef.current)
+      const job = await createPoseVariantJob(frame, BACKEND_URL)
+      setGenerationJobId(job.job_id)
+      setGenerationProgress({ current: job.progress, total: job.total })
+      setGenerationStatus('generating')
+    } catch (err) {
+      setGalleryPoses(GALLERY_POSES)
+      setSelectedPoseId(GALLERY_POSES[0].id)
+      setGenerationJobId(null)
+      setGenerationStatus('failed')
+      setGenerationError(err instanceof Error ? err.message : String(err))
+    }
+  }, [cameraState.status, galleryBusy])
+
   useEffect(() => {
-    if (!liveLandmarks || paused) return
-    const video = videoRef.current
-    const wh: [number, number] = video
-      ? [video.videoWidth || 0, video.videoHeight || 0]
-      : [0, 0]
-    const payload: PoseContextPayload = {
-      landmarks: liveLandmarks.map((lm) => ({
-        x: lm.x,
-        y: lm.y,
-        z: lm.z ?? 0,
-        visibility: lm.visibility ?? 0,
-      })),
-      candidate_template_id: localMatch.template.id,
-      local_confidence: localMatch.score,
-      image_wh: wh,
-    }
-    submitGuidance(payload)
-  }, [liveLandmarks, localMatch, paused, submitGuidance])
+    if (!generationJobId || generationStatus !== 'generating') return
 
-  // If the agent suggests a different template with high confidence, prefer it.
-  const targetTemplate = useMemo(() => {
-    if (
-      guidance?.suggest_different &&
-      guidance.confidence >= 0.6 &&
-      guidance.recommended_template_id !== localMatch.template.id
-    ) {
-      return getTemplate(guidance.recommended_template_id)
-    }
-    return localMatch.template
-  }, [guidance, localMatch.template])
+    const applyJob = (jobId: string) => {
+      void getPoseVariantJob(jobId, BACKEND_URL)
+        .then((job) => {
+          setGenerationProgress({ current: job.progress, total: job.total })
 
-  const displayedConfidence = guidance?.confidence ?? localMatch.score
-  const displayedGuidance = !localMatch.personVisible
-    ? 'Step fully into frame — we need to see your shoulders and hips.'
-    : guidance?.guidance ?? targetTemplate.guidance
+          if (job.status === 'ready') {
+            const generated = job.results.map(galleryPoseFromResult)
+            if (generated.length !== 10) {
+              throw new Error('Pose generation returned an incomplete gallery.')
+            }
+            setGalleryPoses(generated)
+            setSelectedPoseId(generated[0].id)
+            setGenerationStatus('ready')
+            setGenerationJobId(null)
+            return
+          }
+
+          if (job.status === 'failed') {
+            setGalleryPoses(GALLERY_POSES)
+            setSelectedPoseId(GALLERY_POSES[0].id)
+            setGenerationStatus('failed')
+            setGenerationJobId(null)
+            setGenerationError(job.error ?? 'Pose generation failed.')
+          }
+        })
+        .catch((err) => {
+          setGalleryPoses(GALLERY_POSES)
+          setSelectedPoseId(GALLERY_POSES[0].id)
+          setGenerationStatus('failed')
+          setGenerationJobId(null)
+          setGenerationError(err instanceof Error ? err.message : String(err))
+        })
+    }
+
+    const firstPoll = window.setTimeout(() => applyJob(generationJobId), 400)
+    const interval = window.setInterval(() => applyJob(generationJobId), 2500)
+    return () => {
+      window.clearTimeout(firstPoll)
+      window.clearInterval(interval)
+    }
+  }, [generationJobId, generationStatus])
+
+  const launchMessage =
+    cameraState.status === 'idle'
+      ? 'Allow camera access to place a white pose guide over your live preview.'
+      : cameraState.status === 'requesting'
+        ? 'Opening camera...'
+        : cameraState.status === 'denied' ||
+            cameraState.status === 'unavailable' ||
+            cameraState.status === 'error'
+          ? cameraState.message
+          : ''
+
+  const alignmentCopy = getAlignmentCopy(alignment.status)
+  const generationCopy =
+    generationStatus === 'capturing'
+      ? 'Capturing'
+      : generationStatus === 'generating'
+        ? `${generationProgress.current}/${generationProgress.total}`
+        : hasGeneratedGallery
+          ? 'Regenerate'
+          : 'Generate'
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-[1280px] flex-col gap-4 p-6 text-slate-200">
-      <header className="flex items-center justify-between border-b border-slate-400/20 pb-2">
-        <div>
-          <h1 className="m-0 text-[1.75rem] tracking-tight">frame-mog</h1>
-          <p className="m-0 text-muted-foreground">Live pose outline camera</p>
-        </div>
-        <Show when="signed-in">
-          <UserButton />
-        </Show>
-      </header>
-
-      <Show
-        when="signed-in"
-        fallback={
-          <div className="flex flex-1 flex-col items-center justify-center gap-4 p-12 text-center">
-            <h2 className="m-0 text-2xl">Welcome to frame-mog</h2>
-            <p className="m-0 max-w-[360px] text-muted-foreground">
-              Sign in to access the live pose outline camera.
-            </p>
-            <div className="mt-2 flex gap-3">
-              <SignInButton mode="modal">
-                <Button>Sign in</Button>
-              </SignInButton>
-              <SignUpButton mode="modal">
-                <Button variant="outline">Sign up</Button>
-              </SignUpButton>
-            </div>
-          </div>
-        }
-      >
-
-      <main className="grid flex-1 items-start gap-5 grid-cols-[minmax(0,2fr)_minmax(280px,1fr)] max-md:grid-cols-1">
-        <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-[#020617] shadow-[0_20px_60px_rgba(15,23,42,0.5)]">
+    <div className="min-h-screen min-h-dvh overflow-x-hidden">
+      <main className="stage-two-shell">
+        <section className="camera-preview" data-camera-state={cameraState.status}>
           <video
             ref={videoRef}
-            className="h-full w-full -scale-x-100 bg-[#020617] object-cover"
+            className="absolute inset-0 h-full w-full -scale-x-100 bg-[var(--camera-black)] object-cover"
             playsInline
             muted
           />
+
           {cameraState.status === 'ready' && (
             <PoseOverlay
               videoRef={videoRef}
-              liveLandmarks={liveLandmarks}
-              targetTemplate={targetTemplate}
+              targetTemplate={selectedPose.template}
               mirrored
-              paused={paused}
             />
           )}
+
+          <div className="camera-vignette" aria-hidden="true" />
+
+          {cameraState.status === 'ready' && (
+            <>
+              <div
+                className="absolute left-4 right-4 top-4 z-[2] flex items-center justify-between gap-3"
+                style={{ textShadow: '0 2px 14px rgba(0,0,0,0.82)' }}
+                aria-live="polite"
+              >
+                <span className="text-[0.76rem] font-black uppercase tracking-[0.13em]">
+                  frame-mog
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className={`alignment-pill ${alignment.status}`}>
+                    {alignmentCopy}
+                  </span>
+                  <Button
+                    className="generate-button"
+                    type="button"
+                    onClick={() => void handleGeneratePoses()}
+                    disabled={galleryBusy}
+                  >
+                    {generationCopy}
+                  </Button>
+                </div>
+              </div>
+
+              <div
+                className="absolute inset-x-[18px] bottom-5 z-[2] flex flex-col items-center gap-2 text-center"
+                style={{ textShadow: '0 2px 18px rgba(0,0,0,0.9)' }}
+                aria-live="polite"
+              >
+                <span className="camera-hint-pill max-w-[min(410px,88vw)] rounded-full border border-[var(--camera-hairline)] bg-black/[0.38] px-[15px] py-2.5 text-[0.9rem] font-[850] leading-[1.25] backdrop-blur-[18px]">
+                  {selectedPose.instruction}
+                </span>
+                {landmarkerError && (
+                  <small className="max-w-[min(320px,88vw)] text-[0.72rem] text-[#ffd7d7]">
+                    Pose tracker: {landmarkerError}
+                  </small>
+                )}
+              </div>
+            </>
+          )}
+
           {cameraState.status !== 'ready' && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[rgba(2,6,23,0.85)] p-6 text-center">
-              {cameraState.status === 'idle' && (
-                <>
-                  <p>We'll ask for camera access to show a live pose outline.</p>
-                  <Button onClick={() => void requestCamera()}>
-                    Enable camera
+            <div className="camera-launch">
+              <div className="launch-mark" aria-hidden="true" />
+              <p className="mt-2 -mb-1.5 text-[0.72rem] font-black uppercase tracking-[0.14em] text-[var(--camera-warm)]">
+                Mobile pose camera
+              </p>
+              <h1 className="m-0 max-w-[310px] text-[clamp(2.2rem,11vw,3.8rem)] leading-[0.92] tracking-[-0.07em]">
+                Line up before the shot.
+              </h1>
+              <p className={`m-0 max-w-[300px] text-[0.98rem] leading-[1.45] text-[var(--camera-muted)] ${cameraState.status === 'idle' || cameraState.status === 'requesting' ? '' : 'text-[#ffd0d0]'}`}>
+                {launchMessage}
+              </p>
+              {cameraState.status !== 'requesting' &&
+                cameraState.status !== 'unavailable' && (
+                  <Button
+                    variant="outline"
+                    className="camera-launch-btn mt-1.5 min-w-[178px] rounded-full border-white/70 bg-white/95 px-5 py-3.5 font-black text-[#050505] shadow-[0_18px_48px_rgba(0,0,0,0.42),0_0_0_8px_rgba(255,255,255,0.08)]"
+                    onClick={() => void requestCamera()}
+                  >
+                    {cameraState.status === 'idle' ? 'Enable camera' : 'Retry camera'}
                   </Button>
-                </>
-              )}
-              {cameraState.status === 'requesting' && <p>Requesting camera…</p>}
-              {cameraState.status === 'denied' && (
-                <>
-                  <p className="text-red-300">{cameraState.message}</p>
-                  <Button onClick={() => void requestCamera()}>
-                    Retry
-                  </Button>
-                </>
-              )}
-              {cameraState.status === 'unavailable' && (
-                <p className="text-red-300">{cameraState.message}</p>
-              )}
-              {cameraState.status === 'error' && (
-                <>
-                  <p className="text-red-300">Camera error: {cameraState.message}</p>
-                  <Button onClick={() => void requestCamera()}>
-                    Retry
-                  </Button>
-                </>
-              )}
+                )}
             </div>
           )}
-        </div>
+        </section>
 
-        <aside
-          className="flex flex-col gap-3.5 rounded-2xl border border-slate-400/20 bg-[rgba(15,23,42,0.7)] p-5 backdrop-blur-sm"
-          aria-live="polite"
-        >
-          <div className="flex items-baseline justify-between">
-            <span className="text-xs uppercase tracking-widest text-muted-foreground">
-              Pose
+        <section className="pose-gallery" aria-label="Generated pose gallery">
+          <div className="flex items-end justify-between gap-3.5 px-4 pb-[13px]">
+            <div>
+              <p className="m-0 text-[0.72rem] font-black uppercase tracking-[0.14em] text-[var(--camera-muted)]">
+                {galleryBusy
+                  ? 'Generating with OpenAI'
+                  : hasGeneratedGallery
+                    ? 'Generated poses'
+                    : generationStatus === 'failed'
+                      ? 'Fallback poses'
+                      : 'Demo fallback'}
+              </p>
+              <h2 className="m-0 mt-0.5 text-[clamp(1.35rem,6vw,2rem)] leading-none tracking-[-0.055em]">
+                {galleryBusy ? 'Creating pose set' : selectedPose.title}
+              </h2>
+            </div>
+            <span className="text-[0.82rem] font-black text-[var(--camera-warm)]">
+              {galleryBusy
+                ? `${generationProgress.current}/${generationProgress.total}`
+                : `${String(galleryPoses.findIndex((pose) => pose.id === selectedPose.id) + 1).padStart(2, '0')} / 10`}
             </span>
-            <span className="text-lg font-semibold">{targetTemplate.name}</span>
           </div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-xs uppercase tracking-widest text-muted-foreground">
-              Confidence
-            </span>
-            <span className="text-lg font-semibold">
-              {formatConfidence(displayedConfidence)}
-            </span>
-          </div>
-          <p className="m-0 text-base leading-relaxed">{displayedGuidance}</p>
-
-          <div>
-            <Button
-              variant="secondary"
-              onClick={() => setPaused((p) => !p)}
-              disabled={cameraState.status !== 'ready'}
-            >
-              {paused ? 'Resume live analysis' : 'Pause live analysis'}
-            </Button>
-          </div>
-
-          {landmarkerError && (
-            <p className="text-sm text-red-300">
-              Pose tracker: {landmarkerError}
+          {generationError && (
+            <p className="mx-4 -mt-1 mb-3 text-[0.78rem] leading-[1.3] text-[#ffd0d0]">
+              {generationError}
             </p>
           )}
-        </aside>
-      </main>
 
-      </Show>
+          <div className="gallery-rail">
+            <div className="gallery-track">
+              {galleryBusy &&
+                Array.from({ length: 10 }).map((_, index) => (
+                  <div className="pose-card skeleton" key={index}>
+                    <span />
+                  </div>
+                ))}
+
+              {!galleryBusy && galleryLoop.map((pose, index) => {
+                const active = pose.id === selectedPose.id
+                return (
+                  <button
+                    className={active ? 'pose-card active' : 'pose-card'}
+                    type="button"
+                    key={`${pose.id}-${index}`}
+                    onClick={() => setSelectedPoseId(pose.id)}
+                    aria-pressed={active}
+                  >
+                    <img src={pose.imageSrc} alt={pose.title} />
+                    <span>{pose.title}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </section>
+      </main>
     </div>
   )
 }

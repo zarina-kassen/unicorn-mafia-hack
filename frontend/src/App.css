@@ -1,0 +1,453 @@
+:root {
+  color-scheme: dark;
+  --camera-black: #040404;
+  --camera-ink: #f9fafb;
+  --camera-muted: rgba(255, 255, 255, 0.68);
+  --camera-hairline: rgba(255, 255, 255, 0.22);
+  --panel: rgba(23, 26, 34, 0.86);
+  --page-pad: clamp(10px, 3vw, 18px);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #010101;
+  color: var(--camera-ink);
+  font-family: 'SF Pro Display', 'Avenir Next', 'Helvetica Neue', sans-serif;
+  touch-action: manipulation;
+}
+
+button {
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+
+.stage-two-shell {
+  width: min(100%, 430px);
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: max(8px, env(safe-area-inset-top, 0px)) var(--page-pad)
+    max(8px, env(safe-area-inset-bottom, 0px));
+}
+
+.camera-preview {
+  position: relative;
+  height: min(93dvh, 860px);
+  overflow: hidden;
+  border: 1px solid var(--camera-hairline);
+  border-radius: 22px;
+  background: var(--camera-black);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.54);
+  isolation: isolate;
+}
+
+.preview-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+  background: var(--camera-black);
+}
+
+.pose-overlay,
+.camera-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.pose-overlay {
+  mix-blend-mode: screen;
+}
+
+.camera-vignette {
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.5) 0%, transparent 20%),
+    linear-gradient(0deg, rgba(0, 0, 0, 0.72) 0%, transparent 43%);
+}
+
+.camera-top-bar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;  
+  gap: 8px;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.82);
+}
+
+.camera-brand {
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--camera-hairline);
+  background: rgba(15, 16, 19, 0.72);
+}
+
+.camera-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.alignment-pill,
+.progress-pill,
+.camera-bottom-hint span,
+.camera-icons {
+  border: 1px solid var(--camera-hairline);
+  border-radius: 999px;
+  background: rgba(10, 10, 12, 0.62);
+  backdrop-filter: blur(14px);
+}
+
+.alignment-pill {
+  padding: 7px 12px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.8rem;
+  font-weight: 820;
+}
+
+.alignment-pill.close {
+  border-color: rgba(146, 239, 173, 0.5);
+  color: #defee7;
+}
+
+.alignment-pill.adjusting {
+  border-color: rgba(246, 214, 125, 0.52);
+  color: #f8e3ac;
+}
+
+.progress-pill {
+  padding: 7px 12px;
+  font-size: 0.8rem;
+  font-weight: 850;
+  color: #f7f7f7;
+}
+
+.camera-icons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+}
+
+.shutter-button {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: 198px;
+  width: 72px;
+  height: 72px;
+  margin-left: -36px;
+  border-radius: 50%;
+  border: 5px solid rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.05);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.42);
+}
+
+.shutter-button > span {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.shutter-button:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.camera-bottom-hint {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 270px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.9);
+}
+
+.camera-bottom-hint span {
+  max-width: min(400px, 90vw);
+  padding: 11px 16px;
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.camera-bottom-hint small {
+  max-width: min(320px, 88vw);
+  color: #ffd7d7;
+  font-size: 0.72rem;
+}
+
+.camera-launch {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+  padding: 28px;
+  text-align: center;
+  background:
+    radial-gradient(circle at 50% 22%, rgba(255, 255, 255, 0.16), transparent 18%),
+    radial-gradient(circle at 18% 72%, rgba(242, 221, 174, 0.14), transparent 23%),
+    linear-gradient(180deg, rgba(12, 12, 12, 0.74), rgba(0, 0, 0, 0.97));
+}
+
+.launch-mark {
+  width: 82px;
+  height: 118px;
+  border: 3px solid rgba(255, 255, 255, 0.92);
+  border-radius: 52% 48% 46% 54% / 36% 40% 60% 64%;
+  box-shadow:
+    0 0 22px rgba(255, 255, 255, 0.38),
+    inset 0 0 22px rgba(255, 255, 255, 0.1);
+  transform: rotate(-5deg);
+}
+
+.launch-kicker {
+  margin: 8px 0 -6px;
+  color: var(--camera-warm);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.camera-launch h1 {
+  max-width: 310px;
+  margin: 0;
+  font-size: clamp(2.2rem, 11vw, 3.8rem);
+  line-height: 0.92;
+  letter-spacing: -0.07em;
+}
+
+.camera-launch p {
+  max-width: 300px;
+  margin: 0;
+  color: var(--camera-muted);
+  font-size: 0.98rem;
+  line-height: 1.45;
+}
+
+.camera-launch .error {
+  color: #ffd0d0;
+}
+
+.camera-launch button,
+.pose-card {
+  cursor: pointer;
+}
+
+.camera-launch button {
+  min-width: 178px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 999px;
+  margin-top: 5px;
+  padding: 14px 20px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #050505;
+  font-weight: 900;
+  box-shadow:
+    0 18px 48px rgba(0, 0, 0, 0.42),
+    0 0 0 8px rgba(255, 255, 255, 0.08);
+}
+
+.camera-launch button:active,
+.pose-card:active {
+  transform: scale(0.98);
+}
+
+.pose-gallery {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 3;
+  border: 1px solid var(--camera-hairline);
+  border-radius: 22px;
+  padding: 12px 0 14px;
+  background: linear-gradient(180deg, rgba(33, 38, 48, 0.92), rgba(12, 14, 20, 0.92));
+  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.46);
+  overflow: hidden;
+  backdrop-filter: blur(18px);
+}
+
+.gallery-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 12px 10px;
+}
+
+.gallery-heading p,
+.gallery-heading h2 {
+  margin: 0;
+}
+
+.gallery-heading p {
+  color: var(--camera-muted);
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.gallery-heading h2 {
+  margin-top: 3px;
+  font-size: clamp(1rem, 3.6vw, 1.16rem);
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+}
+
+.gallery-nav {
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 0.94rem;
+  cursor: default;
+}
+
+.gallery-error {
+  margin: -4px 16px 12px;
+  color: #ffd0d0;
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+
+.gallery-rail {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.gallery-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.gallery-track {
+  display: flex;
+  width: max-content;
+  gap: 8px;
+  padding: 0 12px;
+}
+
+.pose-card {
+  width: clamp(102px, 30vw, 132px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 0;
+  color: var(--camera-ink);
+  background: rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+  text-align: left;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.32);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.pose-card.active {
+  border-color: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25);
+}
+
+.pose-card.skeleton {
+  position: relative;
+  height: calc(clamp(102px, 30vw, 132px) * 1.58);
+  cursor: default;
+  overflow: hidden;
+}
+
+.pose-card.skeleton::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.16), transparent),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03));
+  animation: skeleton-sweep 1.3s ease-in-out infinite;
+}
+
+.pose-card.skeleton span {
+  position: absolute;
+  left: 10px;
+  right: 24px;
+  bottom: 12px;
+  height: 12px;
+  border-radius: 999px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.pose-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+}
+
+.pose-card span {
+  display: block;
+  padding: 8px 8px 10px;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 0.72rem;
+  font-weight: 850;
+  line-height: 1.12;
+}
+
+@keyframes skeleton-sweep {
+  from {
+    transform: translateX(-70%);
+  }
+
+  to {
+    transform: translateX(70%);
+  }
+}
+
+@media (max-width: 390px) {
+  .camera-bottom-hint {
+    bottom: 250px;
+  }
+
+  .shutter-button {
+    bottom: 180px;
+  }
+}

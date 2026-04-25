@@ -54,68 +54,25 @@ class TemplateMeta(BaseModel):
 
 
 class PoseVariantResult(BaseModel):
-    """A generated pose variant returned to the frontend gallery."""
+    """One generated pose image returned by the image generation pipeline."""
 
     id: str
+    slot_index: int
     title: str
     instruction: str
     image_url: str
     pose_template_id: str
-    replaceable: bool = False
+    replaceable: bool
+    tier: str  # "fast" | "hq"
+    model: str
 
 
 class PoseVariantJob(BaseModel):
-    """Status payload for asynchronous pose-variant generation."""
+    """Current state of a pose-variant generation job."""
 
     job_id: str
     status: str  # "queued" | "generating" | "ready" | "failed"
-    progress: int = Field(ge=0, le=10)
-    total: int = 10
-    results: list[PoseVariantResult] = Field(default_factory=list)
+    progress: int
+    total: int
+    results: list[PoseVariantResult]
     error: str | None = None
-
-
-class MemorySeedEntry(BaseModel):
-    """A single onboarding reference with extracted preference tags."""
-
-    source_ref: str
-    pose_tags: list[str] = Field(default_factory=list)
-    style_tags: list[str] = Field(default_factory=list)
-    composition_tags: list[str] = Field(default_factory=list)
-    scene_tags: list[str] = Field(default_factory=list)
-    confidence: float = Field(default=0.8, ge=0.0, le=1.0)
-
-
-class MemoryOnboardingRequest(BaseModel):
-    """Seed user taste profile from up to 5 selected photos."""
-
-    entries: list[MemorySeedEntry] = Field(min_length=1, max_length=5)
-
-
-class MemoryFeedbackRequest(BaseModel):
-    """User interaction outcome to reinforce memory."""
-
-    event: str
-    pose_template_id: str | None = None
-    scene_tags: list[str] = Field(default_factory=list)
-    outcome_score: float | None = Field(default=None, ge=0.0, le=1.0)
-
-
-class MemoryStatusResponse(BaseModel):
-    """Simple response for memory write operations."""
-
-    ok: bool
-
-
-class MemoryPreferencesRequest(BaseModel):
-    """Privacy and learning controls for user memory sources."""
-
-    allow_camera_roll: bool = True
-    allow_instagram: bool = False
-    allow_pinterest: bool = False
-
-
-class MemoryResetRequest(BaseModel):
-    """Clear or reduce remembered user taste profile."""
-
-    hard_reset: bool = False

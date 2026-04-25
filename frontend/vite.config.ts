@@ -12,13 +12,13 @@ export default defineConfig({
     },
   },
   server: {
-    allowedHosts: ['aja-spacious-brittaney.ngrok-free.dev'],
+    allowedHosts: ['.ngrok-free.dev', 'localhost', '127.0.0.1'],
     proxy: {
       // Forward backend calls to the FastAPI server so the frontend can use
       // same-origin paths (/api/..., /health) and avoid CORS in dev.
       '/api': 'http://localhost:8000',
-      '/generated': 'http://localhost:8000',
       '/health': 'http://localhost:8000',
+      '/generated': 'http://localhost:8000',
     },
   },
 })

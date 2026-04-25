@@ -1,4 +1,5 @@
 import type { NormalizedLandmark } from '../pose/mediapipe'
+import type { PoseVariantSceneContextPayload } from '../pose/sceneContext'
 
 export interface GuidanceResponse {
   recommended_template_id: string
@@ -126,9 +127,13 @@ export async function createPoseVariantJob(
   referenceImage: Blob,
   baseUrl = '',
   getToken?: GetToken,
+  sceneContext?: PoseVariantSceneContextPayload,
 ): Promise<PoseVariantJob> {
   const form = new FormData()
   form.append('reference_image', referenceImage, 'camera-reference.jpg')
+  if (sceneContext) {
+    form.append('scene_context', JSON.stringify(sceneContext))
+  }
   const headers = await withAuthHeaders(getToken)
   const res = await fetch(`${baseUrl}/api/pose-variants`, {
     method: 'POST',
@@ -252,6 +257,7 @@ export function createGuidanceClient(
   baseUrl: string,
   intervalMs = 1500,
   timeoutMs = 3000,
+  getToken?: GetToken,
 ): GuidanceClient {
   let lastSend = 0
   let pending: PoseContextPayload | null = null
@@ -270,9 +276,10 @@ export function createGuidanceClient(
     inflight = new AbortController()
     const timeoutId = setTimeout(() => inflight?.abort(), timeoutMs)
     try {
+      const headers = await withAuthHeaders(getToken, { 'content-type': 'application/json' })
       const res = await fetch(`${baseUrl}/api/guidance`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
         signal: inflight.signal,
       })

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -64,13 +66,35 @@ class PoseVariantResult(BaseModel):
     replaceable: bool = False
 
 
+class NormalizedSubjectBBox(BaseModel):
+    """Axis-aligned subject bounds in normalized image coordinates (0..1)."""
+
+    x_min: float = Field(ge=0.0, le=1.0)
+    y_min: float = Field(ge=0.0, le=1.0)
+    x_max: float = Field(ge=0.0, le=1.0)
+    y_max: float = Field(ge=0.0, le=1.0)
+
+
+class PoseVariantSceneContext(BaseModel):
+    """Client hints from the live camera and pose (capture matches mirrored JPEG)."""
+
+    capture_width: int = Field(ge=1, le=20000)
+    capture_height: int = Field(ge=1, le=20000)
+    aspect_ratio: float = Field(gt=0, le=4.0)
+    subject_bbox: NormalizedSubjectBBox | None = None
+    subject_fill_width: float | None = Field(default=None, ge=0.0, le=1.0)
+    subject_fill_height: float | None = Field(default=None, ge=0.0, le=1.0)
+    horizontal_placement: Literal["left", "center", "right", "unknown"] = "unknown"
+    framing_label: str = Field(min_length=1, max_length=64)
+
+
 class PoseVariantJob(BaseModel):
-    """Status payload for asynchronous pose-variant generation."""
+    """Current state of a pose-variant generation job."""
 
     job_id: str
     status: str  # "queued" | "generating" | "ready" | "failed"
     progress: int = Field(ge=0, le=10)
-    total: int = 10
+    total: int
     results: list[PoseVariantResult] = Field(default_factory=list)
     error: str | None = None
 

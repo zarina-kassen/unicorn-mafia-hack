@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from app import billing
 from app.auth import require_auth
+from app import main as main_module
 from app.main import app
 
 
@@ -30,7 +31,10 @@ def test_billing_account_endpoint() -> None:
     assert body["free_monthly_credits"] > 0
 
 
-def test_insufficient_credits_for_pose_generation() -> None:
+def test_insufficient_credits_for_pose_generation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(main_module, "check_rate_limit", lambda *a, **k: None)
     account = billing.get_account_state("test-user-id")
     if account["balance"] > 0:
         billing.spend_credits(
@@ -52,7 +56,9 @@ def test_webhook_dedupes_replayed_events(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_123")
     monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test_123")
 
-    def fake_construct_event(raw: bytes, signature: str, secret: str) -> dict[str, object]:
+    def fake_construct_event(
+        raw: bytes, signature: str, secret: str
+    ) -> dict[str, object]:
         assert raw == b"{}"
         assert signature == "sig"
         assert secret == "whsec_test_123"
@@ -86,7 +92,9 @@ def test_failed_job_refund_is_idempotent() -> None:
     job_id = f"job-{uuid.uuid4().hex}"
     billing.add_credits(user_id, amount=50, event_type="test_topup")
     before = billing.get_account_state(user_id)["balance"]
-    billing.spend_credits(user_id, amount=10, event_type="pose_variant_job", event_ref=job_id)
+    billing.spend_credits(
+        user_id, amount=10, event_type="pose_variant_job", event_ref=job_id
+    )
     after_spend = billing.get_account_state(user_id)["balance"]
     assert after_spend == before - 10
     billing.credit_refund_for_failed_job(user_id, job_id)

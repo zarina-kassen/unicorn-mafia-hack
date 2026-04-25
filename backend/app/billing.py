@@ -20,16 +20,24 @@ class BillingConfig:
     free_monthly_credits: int = int(os.environ.get("FREE_MONTHLY_CREDITS", "80"))
     guidance_cost: int = int(os.environ.get("GUIDANCE_COST_CREDITS", "1"))
     pose_variant_cost: int = int(os.environ.get("POSE_VARIANT_COST_CREDITS", "15"))
-    guidance_rate_per_hour: int = int(os.environ.get("GUIDANCE_RATE_LIMIT_PER_HOUR", "40"))
+    guidance_rate_per_hour: int = int(
+        os.environ.get("GUIDANCE_RATE_LIMIT_PER_HOUR", "40")
+    )
     pose_jobs_per_day_free: int = int(os.environ.get("POSE_JOBS_PER_DAY_FREE", "5"))
     pose_jobs_per_day_paid: int = int(os.environ.get("POSE_JOBS_PER_DAY_PAID", "15"))
     memory_writes_per_hour: int = int(os.environ.get("MEMORY_WRITES_PER_HOUR", "120"))
-    max_pose_jobs_per_hour_global: int = int(os.environ.get("MAX_POSE_JOBS_PER_HOUR_GLOBAL", "120"))
+    max_pose_jobs_per_hour_global: int = int(
+        os.environ.get("MAX_POSE_JOBS_PER_HOUR_GLOBAL", "120")
+    )
 
 
 CONFIG = BillingConfig()
 
-_DB_PATH = Path(os.environ.get("BILLING_DB_PATH", str(Path(__file__).resolve().parents[1] / "billing.sqlite3")))
+_DB_PATH = Path(
+    os.environ.get(
+        "BILLING_DB_PATH", str(Path(__file__).resolve().parents[1] / "billing.sqlite3")
+    )
+)
 _LOCK = threading.Lock()
 
 PACK_CREDITS: dict[str, int] = {
@@ -197,7 +205,9 @@ def get_account_state(user_id: str) -> dict[str, Any]:
     }
 
 
-def _set_counter(db: sqlite3.Connection, key: str, window_start: int, count: int) -> None:
+def _set_counter(
+    db: sqlite3.Connection, key: str, window_start: int, count: int
+) -> None:
     db.execute(
         """
         INSERT INTO rate_counters(counter_key, window_start, count)
@@ -380,7 +390,10 @@ def _stripe_key() -> str:
     if not api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"code": "billing_unavailable", "message": "Stripe is not configured."},
+            detail={
+                "code": "billing_unavailable",
+                "message": "Stripe is not configured.",
+            },
         )
     return api_key
 
@@ -393,7 +406,10 @@ def create_checkout_session(
     cancel_url: str,
 ) -> dict[str, str]:
     if pack_id not in PACK_CREDITS:
-        raise HTTPException(status_code=400, detail={"code": "invalid_pack", "message": "Invalid credit pack."})
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_pack", "message": "Invalid credit pack."},
+        )
     price_id = os.environ.get(PACK_PRICE_ENV[pack_id], "").strip()
     if not price_id:
         raise HTTPException(
@@ -406,7 +422,11 @@ def create_checkout_session(
         line_items=[{"price": price_id, "quantity": 1}],
         success_url=success_url,
         cancel_url=cancel_url,
-        metadata={"clerk_user_id": user_id, "pack_id": pack_id, "credits": str(PACK_CREDITS[pack_id])},
+        metadata={
+            "clerk_user_id": user_id,
+            "pack_id": pack_id,
+            "credits": str(PACK_CREDITS[pack_id]),
+        },
     )
     with _LOCK, _conn() as db:
         _ensure_user(db, user_id)
@@ -427,18 +447,32 @@ def handle_stripe_webhook(raw_body: bytes, signature: str | None) -> dict[str, A
     if not webhook_secret:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"code": "billing_unavailable", "message": "Stripe webhook secret is missing."},
+            detail={
+                "code": "billing_unavailable",
+                "message": "Stripe webhook secret is missing.",
+            },
         )
     if not signature:
-        raise HTTPException(status_code=400, detail={"code": "invalid_signature", "message": "Missing signature header."})
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "invalid_signature",
+                "message": "Missing signature header.",
+            },
+        )
     try:
         event = stripe.Webhook.construct_event(raw_body, signature, webhook_secret)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail={"code": "invalid_signature", "message": str(exc)}) from exc
+        raise HTTPException(
+            status_code=400, detail={"code": "invalid_signature", "message": str(exc)}
+        ) from exc
     event_id = str(event.get("id", ""))
     event_type = str(event.get("type", ""))
     if not event_id:
-        raise HTTPException(status_code=400, detail={"code": "invalid_event", "message": "Missing event id."})
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_event", "message": "Missing event id."},
+        )
     with _LOCK, _conn() as db:
         existing = db.execute(
             "SELECT 1 FROM stripe_events WHERE event_id = ?",

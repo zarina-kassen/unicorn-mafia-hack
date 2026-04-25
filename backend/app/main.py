@@ -2,13 +2,28 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import os
+from collections.abc import AsyncIterator
 from functools import lru_cache
+from typing import cast
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic_ai import Agent
 
@@ -32,10 +47,12 @@ from .pose_variants import (
     count_user_active_pose_jobs,
     create_pose_variant_job,
     get_pose_variant_job,
+    get_pose_variant_job_owner,
     reorder_pose_variants,
     run_pose_variant_job,
     set_pose_variant_owner,
     set_pose_variant_personalization,
+    set_pose_variant_scene_context,
 )
 from .schemas import (
     BillingAccountResponse,
@@ -50,11 +67,12 @@ from .schemas import (
     MemoryStatusResponse,
     PoseContext,
     PoseVariantJob,
+    PoseVariantSceneContext,
     TemplateMeta,
 )
 from .templates import TEMPLATES
 
-load_dotenv()
+load_dotenv(override=True)
 
 logger = logging.getLogger(__name__)
 
@@ -78,12 +96,18 @@ def _summarize_landmarks(lm: list[Landmark]) -> str:
     if not lm:
         return "no landmarks"
     important = {
-        11: "L-shoulder", 12: "R-shoulder",
-        13: "L-elbow", 14: "R-elbow",
-        15: "L-wrist", 16: "R-wrist",
-        23: "L-hip", 24: "R-hip",
-        25: "L-knee", 26: "R-knee",
-        27: "L-ankle", 28: "R-ankle",
+        11: "L-shoulder",
+        12: "R-shoulder",
+        13: "L-elbow",
+        14: "R-elbow",
+        15: "L-wrist",
+        16: "R-wrist",
+        23: "L-hip",
+        24: "R-hip",
+        25: "L-knee",
+        26: "R-knee",
+        27: "L-ankle",
+        28: "R-ankle",
     }
     parts: list[str] = []
     for idx, name in important.items():
@@ -114,11 +138,15 @@ def get_agent() -> Agent[None, GuidanceResponse]:
     Lazy so importing this module doesn't require a gateway key — handy for
     tests and for the /api/templates endpoint which doesn't touch the model.
     """
-    return Agent(
-        AGENT_MODEL,
-        output_type=GuidanceResponse,
-        system_prompt=SYSTEM_PROMPT,
+    return cast(
+        Agent[None, GuidanceResponse],
+        Agent(
+            AGENT_MODEL,
+            output_type=GuidanceResponse,
+            system_prompt=SYSTEM_PROMPT,
+        ),
     )
+
 
 app = FastAPI(title="frame-mog")
 GENERATED_ROOT.mkdir(parents=True, exist_ok=True)
@@ -170,7 +198,9 @@ def _enforce_guidance_limits(user_id: str, request: Request) -> None:
 def _enforce_pose_job_limits(user_id: str, request: Request) -> None:
     account = get_account_state(user_id)
     per_day_limit = (
-        CONFIG.pose_jobs_per_day_paid if account["plan_type"] != "free" else CONFIG.pose_jobs_per_day_free
+        CONFIG.pose_jobs_per_day_paid
+        if account["plan_type"] != "free"
+        else CONFIG.pose_jobs_per_day_free
     )
     check_rate_limit(
         f"pose:user:{user_id}",
@@ -187,17 +217,25 @@ def _enforce_pose_job_limits(user_id: str, request: Request) -> None:
         max_count=CONFIG.max_pose_jobs_per_hour_global,
         window_seconds=60 * 60,
     )
-    global_active = count_active_pose_jobs()
-    if global_active >= int(os.environ.get("MAX_CONCURRENT_POSE_JOBS_GLOBAL", "12")):
+    if count_active_pose_jobs() >= int(
+        os.environ.get("MAX_CONCURRENT_POSE_JOBS_GLOBAL", "12")
+    ):
         raise HTTPException(
             status_code=429,
-            detail={"code": "global_capacity_reached", "message": "Generation capacity is currently full."},
+            detail={
+                "code": "global_capacity_reached",
+                "message": "Generation capacity is currently full.",
+            },
         )
-    user_active = count_user_active_pose_jobs(user_id)
-    if user_active >= int(os.environ.get("MAX_ACTIVE_POSE_JOBS_PER_USER", "2")):
+    if count_user_active_pose_jobs(user_id) >= int(
+        os.environ.get("MAX_ACTIVE_POSE_JOBS_PER_USER", "2")
+    ):
         raise HTTPException(
             status_code=429,
-            detail={"code": "user_capacity_reached", "message": "Too many active jobs for this user."},
+            detail={
+                "code": "user_capacity_reached",
+                "message": "Too many active jobs for this user.",
+            },
         )
 
 
@@ -215,7 +253,7 @@ async def guidance(
     )
     try:
         result = await get_agent().run(_render_prompt(ctx))
-    except Exception as exc:  # noqa: BLE001 — surface all provider errors uniformly
+    except Exception as exc:  # noqa: BLE001
         logger.exception("Guidance agent failed")
         add_credits(
             user_id,
@@ -232,14 +270,28 @@ async def create_pose_variants(
     background_tasks: BackgroundTasks,
     request: Request,
     reference_image: UploadFile = File(...),
+    scene_context: str | None = Form(default=None),
     user_id: str = Depends(require_auth),
 ) -> PoseVariantJob:
-    if not reference_image.content_type or not reference_image.content_type.startswith("image/"):
+    if not reference_image.content_type or not reference_image.content_type.startswith(
+        "image/"
+    ):
         raise HTTPException(status_code=400, detail="reference_image must be an image")
     _enforce_pose_job_limits(user_id, request)
 
+    parsed_ctx: PoseVariantSceneContext | None = None
+    if scene_context is not None and scene_context.strip():
+        try:
+            parsed_ctx = PoseVariantSceneContext.model_validate_json(scene_context)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400, detail=f"invalid scene_context: {exc}"
+            ) from exc
+
     job = await create_pose_variant_job(reference_image)
     set_pose_variant_owner(job.job_id, user_id)
+    if parsed_ctx is not None:
+        set_pose_variant_scene_context(job.job_id, parsed_ctx)
     try:
         spend_credits(
             user_id,
@@ -261,9 +313,21 @@ async def create_pose_variants(
                 {"id": "pose-03", "title": "Thoughtful", "prompt": "hand near chin"},
                 {"id": "pose-04", "title": "Look away", "prompt": "side look"},
                 {"id": "pose-05", "title": "Hands forward", "prompt": "hands forward"},
-                {"id": "pose-06", "title": "Angled cross", "prompt": "angled crossed arms"},
-                {"id": "pose-07", "title": "Hand on cheek", "prompt": "hand near cheek"},
-                {"id": "pose-08", "title": "Over shoulder", "prompt": "look over shoulder"},
+                {
+                    "id": "pose-06",
+                    "title": "Angled cross",
+                    "prompt": "angled crossed arms",
+                },
+                {
+                    "id": "pose-07",
+                    "title": "Hand on cheek",
+                    "prompt": "hand near cheek",
+                },
+                {
+                    "id": "pose-08",
+                    "title": "Over shoulder",
+                    "prompt": "look over shoulder",
+                },
                 {"id": "pose-09", "title": "Lean in", "prompt": "lean toward camera"},
                 {"id": "pose-10", "title": "Calm profile", "prompt": "calm profile"},
             ],
@@ -275,21 +339,62 @@ async def create_pose_variants(
         )
         if personalization:
             set_pose_variant_personalization(job.job_id, personalization)
+
+    def on_pose_job_failed(failed_job_id: str) -> None:
+        credit_refund_for_failed_job(user_id, failed_job_id)
+
     background_tasks.add_task(
         run_pose_variant_job,
         job.job_id,
-        on_failed=lambda failed_job_id: credit_refund_for_failed_job(user_id, failed_job_id),
+        on_failed=on_pose_job_failed,
         timeout_seconds=int(os.environ.get("POSE_VARIANT_JOB_TIMEOUT_SECONDS", "180")),
     )
     return job
 
 
 @app.get("/api/pose-variants/{job_id}", response_model=PoseVariantJob)
-def get_pose_variants(job_id: str) -> PoseVariantJob:
+def get_pose_variants_job(
+    job_id: str, user_id: str = Depends(require_auth)
+) -> PoseVariantJob:
     job = get_pose_variant_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="pose variant job not found")
+    owner = get_pose_variant_job_owner(job_id)
+    if owner is not None and owner != user_id:
+        raise HTTPException(status_code=404, detail="pose variant job not found")
     return job
+
+
+def _pose_event_payload(kind: str, job: PoseVariantJob) -> str:
+    payload = json.dumps(
+        {"type": kind, "job": job.model_dump()},
+        sort_keys=True,
+    )
+    return f"data: {payload}\n\n"
+
+
+@app.get("/api/pose-variants/{job_id}/events")
+async def stream_pose_variants_events(job_id: str) -> StreamingResponse:
+    """Server-sent updates for job progress. Unauthenticated: job_id acts as capability."""
+    if get_pose_variant_job(job_id) is None:
+        raise HTTPException(status_code=404, detail="pose variant job not found")
+
+    async def event_stream() -> AsyncIterator[str]:
+        last_serialized: str | None = None
+        while True:
+            job = get_pose_variant_job(job_id)
+            if not job:
+                break
+            serialized = json.dumps(job.model_dump(), sort_keys=True)
+            if serialized != last_serialized:
+                last_serialized = serialized
+                yield _pose_event_payload("snapshot", job)
+            if job.status in ("ready", "failed"):
+                yield _pose_event_payload("job_done", job)
+                break
+            await asyncio.sleep(0.25)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.post("/api/memory/onboarding", response_model=MemoryStatusResponse)

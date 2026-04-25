@@ -1,4 +1,4 @@
-import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '@clerk/react'
 
 import { useCamera } from './camera/useCamera'
@@ -13,15 +13,11 @@ import {
   createPoseVariantJob,
   getBillingAccount,
   getPoseVariantJob,
-  postMemoryFeedback,
-  postMemoryOnboarding,
-  postMemoryPreferences,
-  postMemoryReset,
-  type MemorySeedEntryPayload,
   type BillingAccount,
   type PoseVariantResult,
 } from './backend/client'
-import './App.css'
+import { Button } from '@/components/ui/button'
+import { buildPoseVariantSceneContext } from './pose/sceneContext'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? ''
 
@@ -50,7 +46,6 @@ function captureVideoFrame(video: HTMLVideoElement): Promise<Blob> {
   const ctx = canvas.getContext('2d')
   if (!ctx) return Promise.reject(new Error('Could not capture camera frame.'))
 
-  // Match the mirrored selfie preview the user sees.
   ctx.translate(canvas.width, 0)
   ctx.scale(-1, 1)
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
@@ -70,41 +65,6 @@ function captureVideoFrame(video: HTMLVideoElement): Promise<Blob> {
 function backendAssetUrl(path: string): string {
   if (/^https?:\/\//.test(path)) return path
   return `${BACKEND_URL}${path}`
-}
-
-async function readImageSize(file: File): Promise<{ width: number; height: number } | null> {
-  return new Promise((resolve) => {
-    const img = new Image()
-    const url = URL.createObjectURL(file)
-    img.onload = () => {
-      URL.revokeObjectURL(url)
-      resolve({ width: img.naturalWidth, height: img.naturalHeight })
-    }
-    img.onerror = () => {
-      URL.revokeObjectURL(url)
-      resolve(null)
-    }
-    img.src = url
-  })
-}
-
-async function buildSeedEntry(file: File): Promise<MemorySeedEntryPayload> {
-  const size = await readImageSize(file)
-  const ratio = size ? size.width / Math.max(1, size.height) : 1
-  const composition_tags =
-    ratio > 1.2
-      ? ['landscape_frame', 'wide_composition']
-      : ratio < 0.85
-        ? ['portrait_frame', 'tight_subject']
-        : ['balanced_frame']
-  return {
-    source_ref: file.name,
-    pose_tags: [],
-    style_tags: ['camera_roll_like'],
-    composition_tags,
-    scene_tags: ['camera_roll_seed'],
-    confidence: 0.8,
-  }
 }
 
 function galleryPoseFromResult(result: PoseVariantResult): GalleryPose {
@@ -134,13 +94,9 @@ function App() {
   const [generationJobId, setGenerationJobId] = useState<string | null>(null)
   const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 10 })
   const [generationError, setGenerationError] = useState<string | null>(null)
-  const [seedStatus, setSeedStatus] = useState<'idle' | 'uploading' | 'done' | 'failed'>('idle')
-  const [seedMessage, setSeedMessage] = useState<string>('')
-  const [privacyStatus, setPrivacyStatus] = useState<string>('')
   const [billingAccount, setBillingAccount] = useState<BillingAccount | null>(null)
   const [billingMessage, setBillingMessage] = useState<string>('')
   const [checkoutBusy, setCheckoutBusy] = useState(false)
-  const closeFeedbackRef = useRef<string | null>(null)
 
   const landmarkerEnabled = cameraState.status === 'ready'
   const selectedPose = useMemo(
@@ -170,13 +126,13 @@ function App() {
         ? 'close'
         : 'adjusting'
 
-    return {
-      status,
-      score: result.score,
-    }
+    return { status, score: result.score }
   }, [cameraState.status, liveLandmarks, selectedPose])
 
-  const galleryLoop = useMemo(() => [...galleryPoses, ...galleryPoses], [galleryPoses])
+  const galleryLoop = useMemo(
+    () => (galleryPoses.length > 0 ? [...galleryPoses, ...galleryPoses] : []),
+    [galleryPoses],
+  )
   const galleryBusy = generationStatus === 'capturing' || generationStatus === 'generating'
   const hasGeneratedGallery = generationStatus === 'ready'
 
@@ -190,159 +146,11 @@ function App() {
   }, [getToken])
 
   useEffect(() => {
-    void refreshBilling()
-  }, [refreshBilling])
-
-  const handleGeneratePoses = useCallback(async () => {
-    if (cameraState.status !== 'ready' || !videoRef.current || galleryBusy) return
-
-    setGenerationStatus('capturing')
-    setGenerationError(null)
-    setGenerationProgress({ current: 0, total: 10 })
-
-    try {
-      const frame = await captureVideoFrame(videoRef.current)
-      const job = await createPoseVariantJob(frame, BACKEND_URL, getToken)
+    const t = setTimeout(() => {
       void refreshBilling()
-      setGenerationJobId(job.job_id)
-      setGenerationProgress({ current: job.progress, total: job.total })
-      setGenerationStatus('generating')
-    } catch (err) {
-      setGalleryPoses(GALLERY_POSES)
-      setSelectedPoseId(GALLERY_POSES[0].id)
-      setGenerationJobId(null)
-      setGenerationStatus('failed')
-      if (err instanceof ApiError && err.detail?.remaining_credits !== undefined) {
-        setGenerationError(`${err.message} Remaining credits: ${err.detail.remaining_credits}.`)
-      } else {
-        setGenerationError(err instanceof Error ? err.message : String(err))
-      }
-    }
-  }, [cameraState.status, galleryBusy, getToken, refreshBilling])
-
-  useEffect(() => {
-    if (!generationJobId || generationStatus !== 'generating') return
-
-    const applyJob = (jobId: string) => {
-      void getPoseVariantJob(jobId, BACKEND_URL, getToken)
-        .then((job) => {
-          setGenerationProgress({ current: job.progress, total: job.total })
-
-          if (job.status === 'ready') {
-            const generated = job.results.map(galleryPoseFromResult)
-            if (generated.length !== 10) {
-              throw new Error('Pose generation returned an incomplete gallery.')
-            }
-            setGalleryPoses(generated)
-            setSelectedPoseId(generated[0].id)
-            setGenerationStatus('ready')
-            setGenerationJobId(null)
-            return
-          }
-
-          if (job.status === 'failed') {
-            setGalleryPoses(GALLERY_POSES)
-            setSelectedPoseId(GALLERY_POSES[0].id)
-            setGenerationStatus('failed')
-            setGenerationJobId(null)
-            setGenerationError(job.error ?? 'Pose generation failed.')
-          }
-        })
-        .catch((err) => {
-          setGalleryPoses(GALLERY_POSES)
-          setSelectedPoseId(GALLERY_POSES[0].id)
-          setGenerationStatus('failed')
-          setGenerationJobId(null)
-          setGenerationError(err instanceof Error ? err.message : String(err))
-        })
-    }
-
-    const firstPoll = window.setTimeout(() => applyJob(generationJobId), 400)
-    const interval = window.setInterval(() => applyJob(generationJobId), 2500)
-    return () => {
-      window.clearTimeout(firstPoll)
-      window.clearInterval(interval)
-    }
-  }, [generationJobId, generationStatus, getToken])
-
-  useEffect(() => {
-    if (alignment.status !== 'close') return
-    if (closeFeedbackRef.current === selectedPose.id) return
-    closeFeedbackRef.current = selectedPose.id
-    void postMemoryFeedback(
-      {
-        event: 'overlay_completed',
-        pose_template_id: selectedPose.template.id,
-        scene_tags: ['camera_live'],
-        outcome_score: 0.9,
-      },
-      BACKEND_URL,
-      getToken,
-    )
-  }, [alignment.status, selectedPose.id, selectedPose.template.id, getToken])
-
-  const handleSeedImages = useCallback(
-    async (event: ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(event.target.files ?? []).slice(0, 5)
-      if (files.length === 0) return
-      setSeedStatus('uploading')
-      setSeedMessage('')
-      try {
-        const entries = await Promise.all(files.map(buildSeedEntry))
-        const ok = await postMemoryOnboarding(entries, BACKEND_URL, getToken)
-        if (!ok) throw new Error('seed failed')
-        setSeedStatus('done')
-        setSeedMessage('Taste profile updated from selected photos.')
-      } catch {
-        setSeedStatus('failed')
-        setSeedMessage('Could not seed memory. Try again after sign-in.')
-      } finally {
-        event.target.value = ''
-      }
-    },
-    [getToken],
-  )
-
-  const handlePreferences = useCallback(
-    async (allow_camera_roll: boolean, allow_instagram: boolean, allow_pinterest: boolean) => {
-      const ok = await postMemoryPreferences(
-        { allow_camera_roll, allow_instagram, allow_pinterest },
-        BACKEND_URL,
-        getToken,
-      )
-      setPrivacyStatus(ok ? 'Preferences saved.' : 'Could not save preferences.')
-    },
-    [getToken],
-  )
-
-  const handleResetMemory = useCallback(
-    async (hardReset: boolean) => {
-      const ok = await postMemoryReset(hardReset, BACKEND_URL, getToken)
-      setPrivacyStatus(ok ? 'Memory reset request saved.' : 'Could not reset memory.')
-    },
-    [getToken],
-  )
-
-  const launchMessage =
-    cameraState.status === 'idle'
-      ? 'Allow camera access to place a white pose guide over your live preview.'
-      : cameraState.status === 'requesting'
-        ? 'Opening camera...'
-        : cameraState.status === 'denied' ||
-            cameraState.status === 'unavailable' ||
-            cameraState.status === 'error'
-          ? cameraState.message
-          : ''
-
-  const alignmentCopy = getAlignmentCopy(alignment.status)
-  const generationCopy =
-    generationStatus === 'capturing'
-      ? 'Capturing'
-      : generationStatus === 'generating'
-        ? `${generationProgress.current}/${generationProgress.total}`
-        : hasGeneratedGallery
-          ? 'Regenerate'
-          : 'Generate'
+    }, 0)
+    return () => clearTimeout(t)
+  }, [refreshBilling])
 
   const handleBuyCredits = useCallback(
     async (packId: 'pack_100' | 'pack_200') => {
@@ -365,78 +173,273 @@ function App() {
     [getToken],
   )
 
+  const handleGeneratePoses = useCallback(async () => {
+    if (cameraState.status !== 'ready' || !videoRef.current || galleryBusy) return
+
+    setGenerationStatus('capturing')
+    setGenerationError(null)
+    setGenerationProgress({ current: 0, total: 10 })
+
+    try {
+      const video = videoRef.current
+      const scene = buildPoseVariantSceneContext(
+        liveLandmarks,
+        video.videoWidth,
+        video.videoHeight,
+      )
+      const frame = await captureVideoFrame(video)
+      const job = await createPoseVariantJob(frame, BACKEND_URL, getToken, scene)
+      void refreshBilling()
+      setGenerationJobId(job.job_id)
+      setGenerationProgress({ current: job.progress, total: job.total })
+      setGenerationStatus('generating')
+    } catch (err) {
+      setGalleryPoses(GALLERY_POSES)
+      setSelectedPoseId(GALLERY_POSES[0].id)
+      setGenerationJobId(null)
+      setGenerationStatus('failed')
+      if (err instanceof ApiError && err.detail?.remaining_credits !== undefined) {
+        setGenerationError(`${err.message} Remaining credits: ${err.detail.remaining_credits}.`)
+      } else {
+        setGenerationError(err instanceof Error ? err.message : String(err))
+      }
+    }
+  }, [cameraState.status, galleryBusy, getToken, liveLandmarks, refreshBilling])
+
+  useEffect(() => {
+    if (!generationJobId || generationStatus !== 'generating') return
+
+    const applyJob = (jobId: string) => {
+      void getPoseVariantJob(jobId, BACKEND_URL, getToken)
+        .then((job) => {
+          setGenerationProgress({ current: job.progress, total: job.total })
+
+          if (job.results.length > 0) {
+            const generated = job.results.map(galleryPoseFromResult)
+            setGalleryPoses(generated)
+            setSelectedPoseId((previous) =>
+              generated.some((pose) => pose.id === previous) ? previous : generated[0]?.id ?? previous,
+            )
+          }
+
+          if (job.status === 'ready') {
+            setGenerationStatus('ready')
+            setGenerationJobId(null)
+            return
+          }
+
+          if (job.status === 'failed') {
+            setGalleryPoses(GALLERY_POSES)
+            setSelectedPoseId(GALLERY_POSES[0].id)
+            setGenerationStatus('failed')
+            setGenerationJobId(null)
+            setGenerationError(job.error ?? 'Pose generation failed.')
+          }
+        })
+        .catch(() => {
+          setGalleryPoses(GALLERY_POSES)
+          setSelectedPoseId(GALLERY_POSES[0].id)
+          setGenerationStatus('failed')
+          setGenerationJobId(null)
+          setGenerationError('Pose generation status failed.')
+        })
+    }
+
+    const firstPoll = window.setTimeout(() => applyJob(generationJobId), 400)
+    const interval = window.setInterval(() => applyJob(generationJobId), 2500)
+    return () => {
+      window.clearTimeout(firstPoll)
+      window.clearInterval(interval)
+    }
+  }, [generationJobId, generationStatus, getToken])
+
+  const launchMessage =
+    cameraState.status === 'idle'
+      ? 'Allow camera access to place a white pose guide over your live preview.'
+      : cameraState.status === 'requesting'
+        ? 'Opening camera...'
+        : cameraState.status === 'denied' ||
+            cameraState.status === 'unavailable' ||
+            cameraState.status === 'error'
+          ? cameraState.message
+          : ''
+
+  const alignmentCopy = getAlignmentCopy(alignment.status)
+  const generationCopy =
+    generationStatus === 'capturing'
+      ? 'Capturing'
+      : generationStatus === 'generating'
+        ? `${generationProgress.current}/${generationProgress.total}`
+        : hasGeneratedGallery
+          ? 'Regenerate'
+          : 'Generate'
+
   return (
-    <div className="app-shell">
+    <div className="min-h-screen min-h-dvh overflow-x-hidden">
       <main className="stage-two-shell">
         <section className="camera-preview" data-camera-state={cameraState.status}>
-          <video ref={videoRef} className="preview-video" playsInline muted />
+          <video
+            ref={videoRef}
+            className="absolute inset-0 h-full w-full -scale-x-100 bg-cam-surface object-cover"
+            playsInline
+            muted
+          />
 
           {cameraState.status === 'ready' && (
-            <PoseOverlay
-              videoRef={videoRef}
-              targetTemplate={selectedPose.template}
-              mirrored
-            />
+            <PoseOverlay videoRef={videoRef} targetTemplate={selectedPose.template} mirrored />
           )}
 
           <div className="camera-vignette" aria-hidden="true" />
 
           {cameraState.status === 'ready' && (
             <>
-              <div className="camera-top-bar" aria-live="polite">
-                <span className="camera-brand">frame-mog</span>
-                <div className="camera-actions">
+              <div
+                className="absolute left-4 right-4 top-4 z-[2] flex items-center justify-between gap-3"
+                style={{ textShadow: 'var(--shadow-cam-text)' }}
+                aria-live="polite"
+              >
+                <span className="text-[0.76rem] font-black uppercase tracking-[0.13em]">
+                  frame-mog
+                </span>
+                <div className="flex items-center gap-2">
                   {billingAccount && (
-                    <span className="credit-pill">
+                    <span className="credit-pill text-[0.76rem] font-black">
                       Credits {billingAccount.balance}
                     </span>
                   )}
                   <span className={`alignment-pill ${alignment.status}`}>
                     {alignmentCopy}
                   </span>
-                  <button
+                  <Button
                     className="generate-button"
                     type="button"
                     onClick={() => void handleGeneratePoses()}
                     disabled={galleryBusy}
                   >
                     {generationCopy}
-                  </button>
+                  </Button>
                 </div>
               </div>
 
-              <div className="camera-bottom-hint" aria-live="polite">
-                <span>{selectedPose.instruction}</span>
+              <div
+                className="absolute inset-x-[18px] bottom-5 z-[2] flex flex-col items-center gap-2 text-center"
+                style={{ textShadow: 'var(--shadow-cam-text-heavy)' }}
+                aria-live="polite"
+              >
+                <span className="camera-hint-pill max-w-[min(410px,88vw)] rounded-full border border-cam-hairline bg-black/[0.38] px-[15px] py-2.5 text-[0.9rem] font-[850] leading-[1.25] backdrop-blur-[18px]">
+                  {selectedPose.instruction}
+                </span>
                 {landmarkerError && (
-                  <small>Pose tracker: {landmarkerError}</small>
+                  <small className="max-w-[min(320px,88vw)] text-[0.72rem] text-cam-error-soft">
+                    Pose tracker: {landmarkerError}
+                  </small>
                 )}
-                {seedMessage && <small>{seedMessage}</small>}
+
               </div>
+
+              <button
+                className="shutter-button"
+                type="button"
+                onClick={() => void handleGeneratePoses()}
+                disabled={galleryBusy}
+                aria-label={generationCopy}
+              >
+                <span />
+              </button>
+
+              <section className="pose-gallery" aria-label="Generated pose gallery">
+                <div className="gallery-heading">
+                  <button className="gallery-nav" type="button" aria-label="Previous">
+                    ‹
+                  </button>
+                  <div>
+                    <p>{galleryBusy ? 'AI POSE RECOMMENDATIONS' : 'POSE RECOMMENDATIONS'}</p>
+                    <h2>{galleryBusy ? 'Generating...' : selectedPose.title}</h2>
+                  </div>
+                  <button className="gallery-nav" type="button" aria-label="Close">
+                    ✕
+                  </button>
+                </div>
+                {generationError && <p className="gallery-error">{generationError}</p>}
+
+                <div className="gallery-rail">
+                  <div className="gallery-track">
+                    {galleryBusy &&
+                      galleryPoses.map((pose) => {
+                        const active = pose.id === selectedPose.id
+                        return (
+                          <button
+                            className={active ? 'pose-card active' : 'pose-card'}
+                            type="button"
+                            key={pose.id}
+                            onClick={() => setSelectedPoseId(pose.id)}
+                            aria-pressed={active}
+                          >
+                            <img src={pose.imageSrc} alt={pose.title} />
+                            <span>{pose.title}</span>
+                          </button>
+                        )
+                      })}
+
+                    {galleryBusy &&
+                      Array.from({ length: Math.max(0, generationProgress.total - galleryPoses.length) }).map((_, index) => (
+                        <div className="pose-card skeleton" key={index}>
+                          <span />
+                        </div>
+                      ))}
+
+                    {!galleryBusy &&
+                      galleryLoop.map((pose, index) => {
+                        const active = pose.id === selectedPose.id
+                        return (
+                          <button
+                            className={active ? 'pose-card active' : 'pose-card'}
+                            type="button"
+                            key={`${pose.id}-${index}`}
+                            onClick={() => setSelectedPoseId(pose.id)}
+                            aria-pressed={active}
+                          >
+                            <img src={pose.imageSrc} alt={pose.title} />
+                            <span>{pose.title}</span>
+                          </button>
+                        )
+                      })}
+                  </div>
+                </div>
+              </section>
             </>
           )}
 
           {cameraState.status !== 'ready' && (
             <div className="camera-launch">
               <div className="launch-mark" aria-hidden="true" />
-              <p className="launch-kicker">Mobile pose camera</p>
-              <h1>Line up before the shot.</h1>
-              <p className={cameraState.status === 'idle' || cameraState.status === 'requesting' ? '' : 'error'}>
+              <p className="mt-2 -mb-1.5 text-[0.72rem] font-black uppercase tracking-[0.14em] text-cam-accent">
+                Mobile pose camera
+              </p>
+              <h1 className="m-0 max-w-[310px] text-[clamp(2.2rem,11vw,3.8rem)] leading-[0.92] tracking-[-0.07em]">
+                Line up before the shot.
+              </h1>
+              <p className={`m-0 max-w-[300px] text-[0.98rem] leading-[1.45] ${cameraState.status === 'idle' || cameraState.status === 'requesting' ? 'text-cam-ink-muted' : 'text-cam-error'}`}>
                 {launchMessage}
               </p>
               {cameraState.status !== 'requesting' &&
                 cameraState.status !== 'unavailable' && (
-                  <button type="button" onClick={() => void requestCamera()}>
+                  <Button
+                    variant="outline"
+                    className="camera-launch-btn mt-1.5 h-auto min-w-[178px] rounded-full border-cam-active-border bg-cam-button-face dark:bg-cam-button-face px-5 py-3.5 font-black text-cam-inverse dark:text-cam-inverse hover:bg-cam-button-face/90 hover:text-cam-inverse dark:hover:bg-cam-button-face/90 dark:hover:text-cam-inverse shadow-[var(--shadow-cam-launch-btn)]"
+                    onClick={() => void requestCamera()}
+                  >
                     {cameraState.status === 'idle' ? 'Enable camera' : 'Retry camera'}
-                  </button>
+                  </Button>
                 )}
             </div>
           )}
         </section>
 
         <section className="pose-gallery" aria-label="Generated pose gallery">
-          <div className="gallery-heading">
+          <div className="flex items-end justify-between gap-3.5 px-4 pb-[13px]">
             <div>
-              <p>
+              <p className="m-0 text-[0.72rem] font-black uppercase tracking-[0.14em] text-cam-ink-muted">
                 {galleryBusy
                   ? 'Generating with OpenAI'
                   : hasGeneratedGallery
@@ -445,78 +448,52 @@ function App() {
                       ? 'Fallback poses'
                       : 'Demo fallback'}
               </p>
-              <h2>{galleryBusy ? 'Creating pose set' : selectedPose.title}</h2>
+              <h2 className="m-0 mt-0.5 text-[clamp(1.35rem,6vw,2rem)] leading-none tracking-[-0.055em]">
+                {galleryBusy ? 'Creating pose set' : selectedPose.title}
+              </h2>
             </div>
-            <span>
+            <span className="text-[0.82rem] font-black text-cam-accent">
               {galleryBusy
                 ? `${generationProgress.current}/${generationProgress.total}`
-                : `${String(galleryPoses.findIndex((pose) => pose.id === selectedPose.id) + 1).padStart(2, '0')} / 10`}
+                : `${String(galleryPoses.findIndex((pose) => pose.id === selectedPose.id) + 1).padStart(2, '0')} / ${galleryPoses.length}`}
             </span>
           </div>
-          {generationError && <p className="gallery-error">{generationError}</p>}
+          {generationError && (
+            <p className="mx-4 -mt-1 mb-3 text-[0.78rem] leading-[1.3] text-cam-error">
+              {generationError}
+            </p>
+          )}
+
+          <div className="mb-2 flex flex-wrap items-center justify-center gap-2 px-4">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="generate-button h-8 min-w-0 text-xs"
+              disabled={checkoutBusy}
+              onClick={() => void handleBuyCredits('pack_100')}
+            >
+              Buy 100 credits
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="generate-button h-8 min-w-0 text-xs"
+              disabled={checkoutBusy}
+              onClick={() => void handleBuyCredits('pack_200')}
+            >
+              Buy 200 credits
+            </Button>
+            {billingMessage && (
+              <span className="w-full text-center text-[0.72rem] text-cam-ink-muted">{billingMessage}</span>
+            )}
+          </div>
 
           <div className="gallery-rail">
-            <div className="memory-seed-row">
-              <label className="generate-button" style={{ cursor: 'pointer' }}>
-                Seed taste (up to 5 photos)
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={(event) => void handleSeedImages(event)}
-                  style={{ display: 'none' }}
-                />
-              </label>
-              {seedStatus === 'uploading' && <span>Seeding memory...</span>}
-            </div>
-            <div className="memory-controls-row">
-              <button
-                className="generate-button"
-                type="button"
-                onClick={() => void handleBuyCredits('pack_100')}
-                disabled={checkoutBusy}
-              >
-                Buy 100 credits
-              </button>
-              <button
-                className="generate-button"
-                type="button"
-                onClick={() => void handleBuyCredits('pack_200')}
-                disabled={checkoutBusy}
-              >
-                Buy 200 credits
-              </button>
-              <button
-                className="generate-button"
-                type="button"
-                onClick={() => void handlePreferences(true, false, false)}
-              >
-                Camera-roll only
-              </button>
-              <button
-                className="generate-button"
-                type="button"
-                onClick={() => void handlePreferences(true, true, true)}
-              >
-                Enable all sources
-              </button>
-              <button
-                className="generate-button"
-                type="button"
-                onClick={() => void handleResetMemory(false)}
-              >
-                Soft reset memory
-              </button>
-            </div>
-            {privacyStatus && (
-              <div className="memory-status">{privacyStatus}</div>
-            )}
-            {billingMessage && (
-              <div className="memory-status">{billingMessage}</div>
-            )}
             <div className="gallery-track">
               {galleryBusy &&
-                Array.from({ length: 10 }).map((_, index) => (
+                Array.from({ length: Math.max(0, generationProgress.total - galleryPoses.length) }).map((_, index) => (
                   <div className="pose-card skeleton" key={index}>
                     <span />
                   </div>
@@ -529,19 +506,7 @@ function App() {
                     className={active ? 'pose-card active' : 'pose-card'}
                     type="button"
                     key={`${pose.id}-${index}`}
-                    onClick={() => {
-                      setSelectedPoseId(pose.id)
-                      void postMemoryFeedback(
-                        {
-                          event: 'candidate_selected',
-                          pose_template_id: pose.template.id,
-                          scene_tags: ['camera_live', 'gallery_choice'],
-                          outcome_score: active ? 0.5 : 0.75,
-                        },
-                        BACKEND_URL,
-                        getToken,
-                      )
-                    }}
+                    onClick={() => setSelectedPoseId(pose.id)}
                     aria-pressed={active}
                   >
                     <img src={pose.imageSrc} alt={pose.title} />

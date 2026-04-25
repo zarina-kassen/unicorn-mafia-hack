@@ -1,82 +1,47 @@
 #!/bin/sh
 set -e
 
-GARAGE=/usr/local/bin/garage
-DATA_DIR=/var/lib/garage/data
-META_DIR=/var/lib/garage/meta
-CONF=/etc/garage.toml
-MARKER="$DATA_DIR/.garage-initialized"
+# MinIO configuration
+MINIO_ROOT_USER="${MINIO_ROOT_USER:-minioadmin}"
+MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-minioadmin}"
+MINIO_BUCKET="${MINIO_BUCKET:-generated-images}"
+DATA_DIR="/data"
 
-mkdir -p "$DATA_DIR" "$META_DIR"
+mkdir -p "$DATA_DIR"
 
-# ── Generate garage.toml from environment variables ──
-cat > "$CONF" <<EOF
-metadata_dir = "$META_DIR"
-data_dir = "$DATA_DIR"
-db_engine = "sqlite"
-replication_factor = 1
-compression_level = 1
+echo "Starting MinIO server..."
+echo "Root user: $MINIO_ROOT_USER"
+echo "Bucket: $MINIO_BUCKET"
 
-rpc_bind_addr = "[::]:3901"
-rpc_public_addr = "127.0.0.1:3901"
-rpc_secret = "$GARAGE_RPC_SECRET"
+# Start MinIO server in the background
+minio server "$DATA_DIR" --address ":9000" --console-address ":9001" &
+MINIO_PID=$!
 
-[s3_api]
-s3_region = "garage"
-api_bind_addr = "[::]:3900"
-
-[s3_web]
-bind_addr = "[::]:3902"
-root_domain = ".web.garage"
-index = "index.html"
-
-[admin]
-api_bind_addr = "[::]:3903"
-admin_token = "$GARAGE_ADMIN_TOKEN"
-metrics_token = "$GARAGE_METRICS_TOKEN"
-EOF
-
-# ── Start Garage in background ──
-$GARAGE server &
-GARAGE_PID=$!
-
-# Wait for admin API to be ready
-echo "Waiting for Garage to start..."
+# Wait for MinIO to be ready
+echo "Waiting for MinIO to start..."
 for i in $(seq 1 30); do
-  if $GARAGE status 2>/dev/null | grep -q "ID"; then
-    echo "Garage is ready."
+  if curl -sf "http://localhost:9000/minio/health/live" > /dev/null 2>&1; then
+    echo "MinIO is ready."
     break
   fi
   sleep 1
 done
 
-# ── First-time cluster setup ──
-if [ ! -f "$MARKER" ]; then
-  echo "Initializing Garage cluster..."
+# Configure MinIO client
+mc alias set local http://localhost:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
 
-  # Get node ID and assign layout
-  NODE_ID=$($GARAGE status 2>/dev/null | grep -oE '[0-9a-f]{16}' | head -1)
-  if [ -n "$NODE_ID" ]; then
-    $GARAGE layout assign "$NODE_ID" -z dc1 -c 1G -t node1
-    $GARAGE layout apply --version 1
-
-    # Create API key and bucket
-    $GARAGE key create generated-images-key \
-      --access-key "$GARAGE_S3_ACCESS_KEY_ID" \
-      --secret-key "$GARAGE_S3_SECRET_ACCESS_KEY"
-
-    $GARAGE bucket create generated-images
-    $GARAGE bucket allow generated-images --read --write --key generated-images-key
-    $GARAGE bucket website --allow generated-images
-
-    touch "$MARKER"
-    echo "Garage initialized successfully."
-  else
-    echo "WARNING: Could not determine node ID. Initialization skipped."
-  fi
+# Create bucket if it doesn't exist
+if ! mc ls local/"$MINIO_BUCKET" > /dev/null 2>&1; then
+  echo "Creating bucket: $MINIO_BUCKET"
+  mc mb local/"$MINIO_BUCKET"
+  
+  # Set bucket policy to public read for web access
+  mc anonymous set download local/"$MINIO_BUCKET"
+  
+  echo "MinIO initialized successfully."
 else
-  echo "Garage already initialized, skipping setup."
+  echo "Bucket already exists, skipping setup."
 fi
 
-# ── Wait for Garage process ──
-wait $GARAGE_PID
+# Wait for MinIO process
+wait $MINIO_PID

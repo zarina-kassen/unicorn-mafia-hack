@@ -1,12 +1,8 @@
-FROM debian:bookworm-slim
-
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
-
-COPY --from=dxflrs/garage:v2.3.0 /garage /usr/local/bin/garage
+FROM minio/minio:latest
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 3900 3901 3902 3903
+EXPOSE 9000 9001
 
 ENTRYPOINT ["/entrypoint.sh"]

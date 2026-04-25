@@ -239,3 +239,4 @@ frontend/
     App.tsx / App.css              App shell + HUD
   vite.config.ts                   /api + /health proxy in dev
 ```
+# Sat Apr 25 19:08:19 BST 2026

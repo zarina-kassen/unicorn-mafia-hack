@@ -22,3 +22,7 @@ dev = [
     "httpx>=0.27",
     "pytest>=8",
 ]
+
+[tool.ty.src]
+# Optional S3 helper; uses boto3 which is not a core API dependency.
+exclude = ["app/storage.py"]

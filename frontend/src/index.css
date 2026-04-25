@@ -353,18 +353,22 @@
 }
 
 .gallery-rail {
-  @apply w-full overflow-hidden;
-  mask-image: linear-gradient(90deg, transparent, #000 11%, #000 89%, transparent);
+  @apply w-full overflow-x-auto overflow-y-hidden;
+  scrollbar-width: thin;
+  -ms-overflow-style: auto;
+}
+
+.gallery-rail::-webkit-scrollbar {
+  height: 6px;
+}
+
+.gallery-rail::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
 }
 
 .gallery-track {
   @apply flex w-max gap-3 px-4;
-  animation: gallery-spin 52s linear infinite;
-}
-
-.gallery-rail:focus-within .gallery-track,
-.gallery-rail:hover .gallery-track {
-  animation-play-state: paused;
 }
 
 .pose-card {
@@ -428,11 +432,6 @@
    Keyframes
    ========================================================================== */
 
-@keyframes gallery-spin {
-  from { transform: translateX(0); }
-  to { transform: translateX(calc(-50% - 6px)); }
-}
-
 @keyframes skeleton-sweep {
   from { transform: translateX(-70%); }
   to { transform: translateX(70%); }
@@ -460,13 +459,13 @@
   }
 
   .gallery-rail {
-    @apply flex-1;
-    mask-image: linear-gradient(180deg, transparent, #000 8%, #000 92%, transparent);
+    @apply flex-1 overflow-y-auto overflow-x-hidden;
   }
 
   .gallery-track {
     flex-direction: column;
-    animation: gallery-spin-vertical 58s linear infinite;
+    width: 100%;
+    max-width: 100%;
   }
 
   .pose-card {
@@ -474,13 +473,8 @@
   }
 }
 
-@keyframes gallery-spin-vertical {
-  from { transform: translateY(0); }
-  to { transform: translateY(calc(-50% - 6px)); }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .gallery-track {
+  .pose-card.skeleton::before {
     animation: none;
   }
 }

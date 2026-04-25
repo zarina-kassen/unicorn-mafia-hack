@@ -279,7 +279,7 @@ async def _llm_extract_pose_mask(image_url: str) -> tuple[str, int, int]:
 
 
 @lru_cache(maxsize=1)
-def get_agent() -> Agent[None, GuidanceResponse]:
+def get_agent():  # type: ignore[no-untyped-def]
     """Build the Pydantic AI agent on first use.
 
     Lazy so importing this module doesn't require a gateway key — handy for
@@ -602,8 +602,25 @@ async def _run_pose_job(job_id: str) -> None:
 async def create_pose_variants(
     reference_image: UploadFile = File(...),
 ) -> PoseVariantJob:
-    image_bytes = await reference_image.read()
+    # Validate file is an image
+    allowed_mime_types = {"image/jpeg", "image/png", "image/webp"}
     mime = reference_image.content_type or "image/jpeg"
+    if mime not in allowed_mime_types:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file type. Only JPEG, PNG, and WebP images are supported.",
+        )
+
+    allowed_extensions = {".jpg", ".jpeg", ".png", ".webp"}
+    filename = reference_image.filename or ""
+    suffix = Path(filename).suffix.lower()
+    if suffix not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file extension. Only .jpg, .jpeg, .png, and .webp files are supported.",
+        )
+
+    image_bytes = await reference_image.read()
     reference_image_data_url = (
         f"data:{mime};base64,{base64.b64encode(image_bytes).decode('ascii')}"
     )

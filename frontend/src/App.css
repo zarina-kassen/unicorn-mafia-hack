@@ -382,6 +382,7 @@ button {
   width: max-content;
   gap: 6px;
   padding: 0 10px;
+  animation: none;
 }
 
 .pose-card {

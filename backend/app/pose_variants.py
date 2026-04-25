@@ -230,9 +230,9 @@ def run_pose_variant_job(job_id: str) -> None:
                     model=IMAGE_MODEL,
                     image=image_file,
                     prompt=_prompt_for_pose(spec),
-                    size=IMAGE_SIZE,
-                    quality=IMAGE_QUALITY,
-                    input_fidelity=IMAGE_INPUT_FIDELITY,
+                    size=IMAGE_SIZE,  # ty: ignore[invalid-argument-type]
+                    quality=IMAGE_QUALITY,  # ty: ignore[invalid-argument-type]
+                    input_fidelity=IMAGE_INPUT_FIDELITY,  # ty: ignore[invalid-argument-type]
                     output_format="jpeg",
                 )
 

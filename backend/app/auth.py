@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-from clerk_backend_api import authenticate_request, AuthenticateRequestOptions
+from clerk_backend_api import authenticate_request_async, AuthenticateRequestOptions
 from fastapi import HTTPException, Request
 from starlette import status
 
@@ -31,7 +31,7 @@ async def require_auth(request: Request) -> str:
             detail="CLERK_SECRET_KEY is not configured",
         )
 
-    request_state = authenticate_request(
+    request_state = await authenticate_request_async(
         request,
         AuthenticateRequestOptions(
             secret_key=CLERK_SECRET_KEY,

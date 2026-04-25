@@ -13,7 +13,6 @@ import {
 } from './backend/client'
 import './App.css'
 
-// In dev we talk to the backend via the Vite proxy at `/api`.
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? ''
 
 function formatConfidence(score: number): string {
@@ -31,7 +30,6 @@ function App() {
     personVisible: boolean
   }>(() => ({ template: TEMPLATES[0], score: 0, personVisible: false }))
   const [guidance, setGuidance] = useState<GuidanceResponse | null>(null)
-  const [backendOnline, setBackendOnline] = useState<boolean | null>(null)
 
   const landmarkerEnabled = cameraState.status === 'ready' && !paused
 
@@ -49,43 +47,22 @@ function App() {
     })
   }, [])
 
-  const { ready: landmarkerReady, error: landmarkerError } = usePoseLandmarker(
+  const { error: landmarkerError } = usePoseLandmarker(
     videoRef,
     landmarkerEnabled,
     handleLandmarks,
   )
 
-  // Guidance client lifecycle.
   const clientRef = useRef(createGuidanceClient(BACKEND_URL))
   useEffect(() => {
     const client = clientRef.current
-    const unsubscribe = client.subscribe((r) => {
-      setGuidance(r)
-      setBackendOnline(true)
-    })
+    const unsubscribe = client.subscribe(setGuidance)
     return () => {
       unsubscribe()
       client.stop()
     }
   }, [])
 
-  // Probe the backend once so the UI can show an "offline" hint if it is down.
-  useEffect(() => {
-    let cancelled = false
-    fetch(`${BACKEND_URL}/health`)
-      .then((r) => r.ok && r.json())
-      .then((body) => {
-        if (!cancelled) setBackendOnline(Boolean(body))
-      })
-      .catch(() => {
-        if (!cancelled) setBackendOnline(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  // Push the latest local match to the backend on the client's internal cadence.
   useEffect(() => {
     if (!liveLandmarks || paused) return
     const video = videoRef.current
@@ -106,8 +83,7 @@ function App() {
     clientRef.current.submit(payload)
   }, [liveLandmarks, localMatch, paused])
 
-  // If the agent recommends a different template with high confidence, use
-  // it as the on-screen outline target instead of the locally matched one.
+  // If the agent suggests a different template with high confidence, prefer it.
   const targetTemplate = useMemo(() => {
     if (
       guidance?.suggest_different &&
@@ -120,12 +96,9 @@ function App() {
   }, [guidance, localMatch.template])
 
   const displayedConfidence = guidance?.confidence ?? localMatch.score
-  const displayedGuidance =
-    !localMatch.personVisible
-      ? 'Step fully into frame — we need to see your shoulders and hips.'
-      : guidance?.guidance ?? targetTemplate.guidance
-  const guidanceSource =
-    backendOnline === false ? 'local' : guidance ? 'agent' : 'local'
+  const displayedGuidance = !localMatch.personVisible
+    ? 'Step fully into frame — we need to see your shoulders and hips.'
+    : guidance?.guidance ?? targetTemplate.guidance
 
   return (
     <div className="app-shell">
@@ -191,28 +164,6 @@ function App() {
           </div>
           <p className="hud-guidance">{displayedGuidance}</p>
 
-          <div className="hud-meta">
-            <span className={`pill ${landmarkerReady ? 'pill-ok' : 'pill-warn'}`}>
-              MediaPipe {landmarkerReady ? 'live' : 'loading'}
-            </span>
-            <span
-              className={`pill ${
-                backendOnline === true
-                  ? 'pill-ok'
-                  : backendOnline === false
-                    ? 'pill-warn'
-                    : 'pill-info'
-              }`}
-            >
-              Agent {backendOnline === true
-                ? 'online'
-                : backendOnline === false
-                  ? 'offline'
-                  : 'probing'}
-            </span>
-            <span className="pill pill-info">Source: {guidanceSource}</span>
-          </div>
-
           <div className="hud-controls">
             <button
               type="button"
@@ -228,14 +179,6 @@ function App() {
           )}
         </aside>
       </main>
-
-      <footer className="app-footer">
-        <p>
-          Tap <strong>Enable camera</strong>, then strike one of{' '}
-          {TEMPLATES.length} poses. The outline updates in real time; helpful
-          tips arrive from the agent once per second.
-        </p>
-      </footer>
     </div>
   )
 }

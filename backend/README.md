@@ -1,7 +1,7 @@
-# frame-mog — backend (uv + FastAPI + Pydantic-AI)
+# frame-mog — backend (FastAPI + Pydantic AI Gateway)
 
 See the repo root [`README.md`](../README.md) for product context and
-architecture. This document covers backend specifics.
+architecture. This file covers backend specifics.
 
 ## Install
 
@@ -9,34 +9,29 @@ architecture. This document covers backend specifics.
 uv sync
 ```
 
-## Run the API
+## Run
 
 ```bash
-cp .env.example .env      # AI_PROVIDER=mock works out of the box
+cp .env.example .env
+# set PYDANTIC_AI_GATEWAY_API_KEY=pylf_v... (get one at logfire.pydantic.dev)
 uv run uvicorn app.main:app --reload
 ```
 
 Endpoints:
 
-- `GET  /health` — `{ "status": "ok", "provider": "<name>" }`
+- `GET  /health` — `{ "status": "ok", "model": "<agent_model>" }`
 - `GET  /api/templates` — list of `TemplateMeta`
-- `POST /api/guidance` — request body is a `PoseContext`, response is a
-  validated `GuidanceResponse`.
+- `POST /api/guidance` — `PoseContext` → `GuidanceResponse`
 
-## Providers
+## Model
 
-The active guidance agent is selected by `AI_PROVIDER`:
-
-| value    | implementation              | requires          |
-|----------|-----------------------------|-------------------|
-| `mock`   | `app.agents.mock.MockAgent` | nothing           |
-| `openai` | `app.agents.pydantic_ai_agent.PydanticAIAgent` | `OPENAI_API_KEY` |
-
-The OpenAI provider uses Pydantic-AI with `output_type=GuidanceResponse`,
-so the model is forced to return a schema-valid object. `AGENT_MODEL`
-(default `openai:gpt-4o-mini`) can be any Pydantic-AI-supported model
-string. Any unexpected failure at request time is caught and the server
-falls back to the mock agent so the frontend never sees an error.
+The agent uses [Pydantic AI](https://ai.pydantic.dev/) with
+`output_type=GuidanceResponse`, so the model is forced to return a
+schema-valid object. The default model string is
+`gateway/openai:gpt-5.3` — requests are routed through the
+[Pydantic AI Gateway](https://pydantic.dev/docs/ai/overview/gateway/),
+authenticated with `PYDANTIC_AI_GATEWAY_API_KEY`. Override `AGENT_MODEL`
+in `.env` to swap to any other gateway-supported model.
 
 ## Tests
 

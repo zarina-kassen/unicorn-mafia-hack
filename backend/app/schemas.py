@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Landmark(BaseModel):
@@ -65,3 +65,43 @@ class OpenRouterImage(BaseModel):
 
     type: str = "image_url"
     image_url: ImageUrl
+
+
+class PoseMaskResponse(BaseModel):
+    """Mask image metadata returned by the LLM extraction pipeline."""
+
+    mask_url: str = Field(min_length=1)
+    width: int = Field(ge=1)
+    height: int = Field(ge=1)
+    source: str = Field(min_length=1)
+
+
+class MemorySeedEntry(BaseModel):
+    """A single onboarding reference with extracted preference tags."""
+
+    source_ref: str
+    pose_tags: list[str] = Field(default_factory=list)
+    style_tags: list[str] = Field(default_factory=list)
+    composition_tags: list[str] = Field(default_factory=list)
+    scene_tags: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.8, ge=0.0, le=1.0)
+
+
+class MemoryStatusResponse(BaseModel):
+    """Simple response for memory write operations."""
+
+    ok: bool
+
+
+class MemoryPreferencesRequest(BaseModel):
+    """Privacy and learning controls for memory sources."""
+
+    allow_camera_roll: bool = True
+    allow_instagram: bool = False
+    allow_pinterest: bool = False
+
+
+class MemoryResetRequest(BaseModel):
+    """Clear or reduce remembered user taste profile."""
+
+    hard_reset: bool = False

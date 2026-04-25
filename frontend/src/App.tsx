@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useCamera } from './camera/useCamera'
+import type { NormalizedLandmark } from './pose/mediapipe'
+import { usePoseLandmarker } from './pose/usePoseLandmarker'
+import { matchTemplate } from './pose/matcher'
 import { PoseOverlay } from './overlay/PoseOverlay'
 import { GALLERY_POSES, type GalleryPose } from './pose/galleryTargets'
 import {
@@ -9,11 +12,22 @@ import {
   subscribePoseVariantJob,
 } from './backend/client'
 import { Button } from '@/components/ui/button'
-import './App.css'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? ''
 
+type AlignmentStatus = 'finding' | 'adjusting' | 'close'
 type GenerationStatus = 'idle' | 'capturing' | 'generating' | 'ready' | 'failed'
+
+interface AlignmentState {
+  status: AlignmentStatus
+  score: number
+}
+
+function getAlignmentCopy(status: AlignmentStatus): string {
+  if (status === 'close') return 'Close match'
+  if (status === 'adjusting') return 'Adjust your pose'
+  return 'Step into frame'
+}
 
 function captureVideoFrame(video: HTMLVideoElement): Promise<Blob> {
   if (!video.videoWidth || !video.videoHeight) {
@@ -66,21 +80,49 @@ function galleryPoseFromResult(result: PoseVariantResult): GalleryPose {
 function App() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const { state: cameraState, request: requestCamera } = useCamera(videoRef)
-  const [galleryPoses, setGalleryPoses] = useState<GalleryPose[]>([])
-  const [selectedPoseId, setSelectedPoseId] = useState<string | null>(null)
+  const [galleryPoses, setGalleryPoses] = useState<GalleryPose[]>(GALLERY_POSES)
+  const [selectedPoseId, setSelectedPoseId] = useState(GALLERY_POSES[0].id)
+  const [liveLandmarks, setLiveLandmarks] = useState<NormalizedLandmark[] | null>(null)
   const [generationStatus, setGenerationStatus] = useState<GenerationStatus>('idle')
   const [generationJobId, setGenerationJobId] = useState<string | null>(null)
   const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 6 })
   const [generationError, setGenerationError] = useState<string | null>(null)
 
+  const landmarkerEnabled = cameraState.status === 'ready'
   const selectedPose = useMemo(
-    () =>
-      galleryPoses.find((pose) => pose.id === selectedPoseId) ??
-      galleryPoses[0] ??
-      GALLERY_POSES[0],
+    () => galleryPoses.find((pose) => pose.id === selectedPoseId) ?? galleryPoses[0],
     [galleryPoses, selectedPoseId],
   )
 
+  const handleLandmarks = useCallback((lm: NormalizedLandmark[] | null) => {
+    setLiveLandmarks(lm)
+  }, [])
+
+  const { error: landmarkerError } = usePoseLandmarker(
+    videoRef,
+    landmarkerEnabled,
+    handleLandmarks,
+  )
+
+  const alignment = useMemo<AlignmentState>(() => {
+    if (cameraState.status !== 'ready' || !liveLandmarks) {
+      return { status: 'finding', score: 0 }
+    }
+
+    const result = matchTemplate(liveLandmarks, [selectedPose.template])
+    const status: AlignmentStatus = !result.personVisible
+      ? 'finding'
+      : result.score >= 0.92
+        ? 'close'
+        : 'adjusting'
+
+    return { status, score: result.score }
+  }, [cameraState.status, liveLandmarks, selectedPose])
+
+  const galleryLoop = useMemo(
+    () => (galleryPoses.length > 0 ? [...galleryPoses, ...galleryPoses] : []),
+    [galleryPoses],
+  )
   const galleryBusy = generationStatus === 'capturing' || generationStatus === 'generating'
   const hasGeneratedGallery = generationStatus === 'ready'
 
@@ -90,7 +132,6 @@ function App() {
     setGenerationStatus('capturing')
     setGenerationError(null)
     setGenerationProgress({ current: 0, total: 6 })
-    setGalleryPoses([])
 
     try {
       const frame = await captureVideoFrame(videoRef.current)
@@ -99,8 +140,8 @@ function App() {
       setGenerationProgress({ current: job.progress, total: job.total })
       setGenerationStatus('generating')
     } catch (err) {
-      setGalleryPoses([])
-      setSelectedPoseId(null)
+      setGalleryPoses(GALLERY_POSES)
+      setSelectedPoseId(GALLERY_POSES[0].id)
       setGenerationJobId(null)
       setGenerationStatus('failed')
       setGenerationError(err instanceof Error ? err.message : String(err))
@@ -130,16 +171,16 @@ function App() {
         }
 
         if (event.job.status === 'failed') {
-          setGalleryPoses([])
-          setSelectedPoseId(null)
+          setGalleryPoses(GALLERY_POSES)
+          setSelectedPoseId(GALLERY_POSES[0].id)
           setGenerationStatus('failed')
           setGenerationJobId(null)
           setGenerationError(event.job.error ?? 'Pose generation failed.')
         }
       },
       () => {
-        setGalleryPoses([])
-        setSelectedPoseId(null)
+        setGalleryPoses(GALLERY_POSES)
+        setSelectedPoseId(GALLERY_POSES[0].id)
         setGenerationStatus('failed')
         setGenerationJobId(null)
         setGenerationError(null)
@@ -160,11 +201,12 @@ function App() {
           ? cameraState.message
           : ''
 
+  const alignmentCopy = getAlignmentCopy(alignment.status)
   const generationCopy =
     generationStatus === 'capturing'
       ? 'Capturing'
       : generationStatus === 'generating'
-        ? 'Generating…'
+        ? `${generationProgress.current}/${generationProgress.total}`
         : hasGeneratedGallery
           ? 'Regenerate'
           : 'Generate'
@@ -189,22 +231,42 @@ function App() {
           {cameraState.status === 'ready' && (
             <>
               <div
-                className="camera-top-bar"
+                className="absolute left-4 right-4 top-4 z-[2] flex items-center justify-between gap-3"
                 style={{ textShadow: 'var(--shadow-cam-text)' }}
                 aria-live="polite"
               >
-                <button
-                  className="generate-button"
-                  type="button"
-                  onClick={() => void handleGeneratePoses()}
-                  disabled={galleryBusy}
-                >
-                  {generationCopy}
-                </button>
+                <span className="text-[0.76rem] font-black uppercase tracking-[0.13em]">
+                  frame-mog
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className={`alignment-pill ${alignment.status}`}>
+                    {alignmentCopy}
+                  </span>
+                  <Button
+                    className="generate-button"
+                    type="button"
+                    onClick={() => void handleGeneratePoses()}
+                    disabled={galleryBusy}
+                  >
+                    {generationCopy}
+                  </Button>
+                </div>
               </div>
 
-              <div className="camera-bottom-hint" aria-live="polite">
-                <span>{selectedPose.instruction}</span>
+              <div
+                className="absolute inset-x-[18px] bottom-5 z-[2] flex flex-col items-center gap-2 text-center"
+                style={{ textShadow: 'var(--shadow-cam-text-heavy)' }}
+                aria-live="polite"
+              >
+                <span className="camera-hint-pill max-w-[min(410px,88vw)] rounded-full border border-cam-hairline bg-black/[0.38] px-[15px] py-2.5 text-[0.9rem] font-[850] leading-[1.25] backdrop-blur-[18px]">
+                  {selectedPose.instruction}
+                </span>
+                {landmarkerError && (
+                  <small className="max-w-[min(320px,88vw)] text-[0.72rem] text-cam-error-soft">
+                    Pose tracker: {landmarkerError}
+                  </small>
+                )}
+
               </div>
 
               <button
@@ -217,85 +279,79 @@ function App() {
                 <span />
               </button>
 
-              {(galleryBusy || galleryPoses.length > 0 || generationError) && (
-                <section className="pose-gallery" aria-label="Generated pose gallery">
-                  <div className="gallery-heading">
-                    <button className="gallery-nav" type="button" aria-label="Previous">
-                      ‹
-                    </button>
-                    <div>
-                      <p>{galleryBusy ? 'AI POSE RECOMMENDATIONS' : 'POSE RECOMMENDATIONS'}</p>
-                      <h2>{galleryBusy ? 'Generating…' : selectedPose.title}</h2>
-                    </div>
-                    <button className="gallery-nav" type="button" aria-label="Close">
-                      ✕
-                    </button>
+              <section className="pose-gallery" aria-label="Generated pose gallery">
+                <div className="gallery-heading">
+                  <button className="gallery-nav" type="button" aria-label="Previous">
+                    ‹
+                  </button>
+                  <div>
+                    <p>{galleryBusy ? 'AI POSE RECOMMENDATIONS' : 'POSE RECOMMENDATIONS'}</p>
+                    <h2>{galleryBusy ? 'Generating...' : selectedPose.title}</h2>
                   </div>
-                  {generationError && <p className="gallery-error">{generationError}</p>}
+                  <button className="gallery-nav" type="button" aria-label="Close">
+                    ✕
+                  </button>
+                </div>
+                {generationError && <p className="gallery-error">{generationError}</p>}
 
-                  <div className="gallery-rail">
-                    <div className="gallery-track">
-                      {galleryBusy &&
-                        galleryPoses.map((pose) => {
-                          const active = pose.id === selectedPose.id
-                          return (
-                            <button
-                              className={active ? 'pose-card active' : 'pose-card'}
-                              type="button"
-                              key={pose.id}
-                              onClick={() => setSelectedPoseId(pose.id)}
-                              aria-pressed={active}
-                            >
-                              <img src={pose.imageSrc} alt={pose.title} />
-                              <span>{pose.title}</span>
-                            </button>
-                          )
-                        })}
+                <div className="gallery-rail">
+                  <div className="gallery-track">
+                    {galleryBusy &&
+                      galleryPoses.map((pose) => {
+                        const active = pose.id === selectedPose.id
+                        return (
+                          <button
+                            className={active ? 'pose-card active' : 'pose-card'}
+                            type="button"
+                            key={pose.id}
+                            onClick={() => setSelectedPoseId(pose.id)}
+                            aria-pressed={active}
+                          >
+                            <img src={pose.imageSrc} alt={pose.title} />
+                            <span>{pose.title}</span>
+                          </button>
+                        )
+                      })}
 
-                      {galleryBusy &&
-                        Array.from({
-                          length: Math.max(0, generationProgress.total - galleryPoses.length),
-                        }).map((_, index) => (
-                          <div className="pose-card skeleton" key={`sk-${index}`}>
-                            <span />
-                          </div>
-                        ))}
+                    {galleryBusy &&
+                      Array.from({ length: Math.max(0, generationProgress.total - galleryPoses.length) }).map((_, index) => (
+                        <div className="pose-card skeleton" key={index}>
+                          <span />
+                        </div>
+                      ))}
 
-                      {!galleryBusy &&
-                        galleryPoses.map((pose) => {
-                          const active = pose.id === selectedPose.id
-                          return (
-                            <button
-                              className={active ? 'pose-card active' : 'pose-card'}
-                              type="button"
-                              key={pose.id}
-                              onClick={() => setSelectedPoseId(pose.id)}
-                              aria-pressed={active}
-                            >
-                              <img src={pose.imageSrc} alt={pose.title} />
-                              <span>{pose.title}</span>
-                            </button>
-                          )
-                        })}
-                    </div>
+                    {!galleryBusy &&
+                      galleryLoop.map((pose, index) => {
+                        const active = pose.id === selectedPose.id
+                        return (
+                          <button
+                            className={active ? 'pose-card active' : 'pose-card'}
+                            type="button"
+                            key={`${pose.id}-${index}`}
+                            onClick={() => setSelectedPoseId(pose.id)}
+                            aria-pressed={active}
+                          >
+                            <img src={pose.imageSrc} alt={pose.title} />
+                            <span>{pose.title}</span>
+                          </button>
+                        )
+                      })}
                   </div>
-                </section>
-              )}
+                </div>
+              </section>
             </>
           )}
 
           {cameraState.status !== 'ready' && (
             <div className="camera-launch">
               <div className="launch-mark" aria-hidden="true" />
-              <p className="launch-kicker">Mobile pose camera</p>
-              <h1>Line up before the shot.</h1>
-              <p
-                className={
-                  cameraState.status === 'idle' || cameraState.status === 'requesting'
-                    ? ''
-                    : 'error'
-                }
-              >
+              <p className="mt-2 -mb-1.5 text-[0.72rem] font-black uppercase tracking-[0.14em] text-cam-accent">
+                Mobile pose camera
+              </p>
+              <h1 className="m-0 max-w-[310px] text-[clamp(2.2rem,11vw,3.8rem)] leading-[0.92] tracking-[-0.07em]">
+                Line up before the shot.
+              </h1>
+              <p className={`m-0 max-w-[300px] text-[0.98rem] leading-[1.45] ${cameraState.status === 'idle' || cameraState.status === 'requesting' ? 'text-cam-ink-muted' : 'text-cam-error'}`}>
                 {launchMessage}
               </p>
               {cameraState.status !== 'requesting' &&
@@ -310,6 +366,62 @@ function App() {
                 )}
             </div>
           )}
+        </section>
+
+        <section className="pose-gallery" aria-label="Generated pose gallery">
+          <div className="flex items-end justify-between gap-3.5 px-4 pb-[13px]">
+            <div>
+              <p className="m-0 text-[0.72rem] font-black uppercase tracking-[0.14em] text-cam-ink-muted">
+                {galleryBusy
+                  ? 'Generating with OpenAI'
+                  : hasGeneratedGallery
+                    ? 'Generated poses'
+                    : generationStatus === 'failed'
+                      ? 'Fallback poses'
+                      : 'Demo fallback'}
+              </p>
+              <h2 className="m-0 mt-0.5 text-[clamp(1.35rem,6vw,2rem)] leading-none tracking-[-0.055em]">
+                {galleryBusy ? 'Creating pose set' : selectedPose.title}
+              </h2>
+            </div>
+            <span className="text-[0.82rem] font-black text-cam-accent">
+              {galleryBusy
+                ? `${generationProgress.current}/${generationProgress.total}`
+                : `${String(galleryPoses.findIndex((pose) => pose.id === selectedPose.id) + 1).padStart(2, '0')} / ${galleryPoses.length}`}
+            </span>
+          </div>
+          {generationError && (
+            <p className="mx-4 -mt-1 mb-3 text-[0.78rem] leading-[1.3] text-cam-error">
+              {generationError}
+            </p>
+          )}
+
+          <div className="gallery-rail">
+            <div className="gallery-track">
+              {galleryBusy &&
+                Array.from({ length: Math.max(0, generationProgress.total - galleryPoses.length) }).map((_, index) => (
+                  <div className="pose-card skeleton" key={index}>
+                    <span />
+                  </div>
+                ))}
+
+              {!galleryBusy && galleryLoop.map((pose, index) => {
+                const active = pose.id === selectedPose.id
+                return (
+                  <button
+                    className={active ? 'pose-card active' : 'pose-card'}
+                    type="button"
+                    key={`${pose.id}-${index}`}
+                    onClick={() => setSelectedPoseId(pose.id)}
+                    aria-pressed={active}
+                  >
+                    <img src={pose.imageSrc} alt={pose.title} />
+                    <span>{pose.title}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         </section>
       </main>
     </div>

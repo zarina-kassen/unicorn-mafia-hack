@@ -37,7 +37,9 @@ logger = logging.getLogger(__name__)
 
 AGENT_MODEL = os.environ.get("AGENT_MODEL", "gateway/openai:gpt-5.3")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+OPENROUTER_BASE_URL = os.environ.get(
+    "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
+)
 FAST_IMAGE_MODEL = os.environ.get("FAST_IMAGE_MODEL", "black-forest-labs/flux-schnell")
 HQ_IMAGE_MODEL = os.environ.get("HQ_IMAGE_MODEL", "openai/gpt-image-1")
 POSE_VARIANT_TOTAL = 6
@@ -60,12 +62,18 @@ def _summarize_landmarks(lm: list[Landmark]) -> str:
     if not lm:
         return "no landmarks"
     important = {
-        11: "L-shoulder", 12: "R-shoulder",
-        13: "L-elbow", 14: "R-elbow",
-        15: "L-wrist", 16: "R-wrist",
-        23: "L-hip", 24: "R-hip",
-        25: "L-knee", 26: "R-knee",
-        27: "L-ankle", 28: "R-ankle",
+        11: "L-shoulder",
+        12: "R-shoulder",
+        13: "L-elbow",
+        14: "R-elbow",
+        15: "L-wrist",
+        16: "R-wrist",
+        23: "L-hip",
+        24: "R-hip",
+        25: "L-knee",
+        26: "R-knee",
+        27: "L-ankle",
+        28: "R-ankle",
     }
     parts: list[str] = []
     for idx, name in important.items():
@@ -101,6 +109,7 @@ def get_agent() -> Agent[None, GuidanceResponse]:
         output_type=GuidanceResponse,
         system_prompt=SYSTEM_PROMPT,
     )
+
 
 app = FastAPI(title="frame-mog")
 _jobs_lock = asyncio.Lock()
@@ -171,14 +180,18 @@ def _make_variation_prompt(template: TemplateMeta, slot_index: int, tier: str) -
     )
 
 
-def _event_payload(kind: str, job: PoseVariantJob, result: PoseVariantResult | None = None) -> str:
+def _event_payload(
+    kind: str, job: PoseVariantJob, result: PoseVariantResult | None = None
+) -> str:
     payload: dict[str, object] = {"type": kind, "job": job.model_dump()}
     if result:
         payload["result"] = result.model_dump()
     return f"data: {json.dumps(payload)}\n\n"
 
 
-async def _push_event(job_id: str, kind: str, result: PoseVariantResult | None = None) -> None:
+async def _push_event(
+    job_id: str, kind: str, result: PoseVariantResult | None = None
+) -> None:
     async with _jobs_lock:
         state = _pose_jobs.get(job_id)
         if not state:
@@ -189,7 +202,9 @@ async def _push_event(job_id: str, kind: str, result: PoseVariantResult | None =
 async def _store_image(b64_or_url: str, job_id: str, slot_index: int) -> str:
     if b64_or_url.startswith("http://") or b64_or_url.startswith("https://"):
         return b64_or_url
-    raw_b64 = b64_or_url.split(",", 1)[1] if b64_or_url.startswith("data:") else b64_or_url
+    raw_b64 = (
+        b64_or_url.split(",", 1)[1] if b64_or_url.startswith("data:") else b64_or_url
+    )
     binary = base64.b64decode(raw_b64)
     file_name = f"{job_id}-{slot_index + 1}.png"
     out_path = generated_dir / file_name
@@ -231,7 +246,9 @@ async def _openrouter_generate_to_job(
     }
     timeout = httpx.Timeout(45.0, connect=10.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
-        res = await client.post(f"{OPENROUTER_BASE_URL}/chat/completions", headers=headers, json=payload)
+        res = await client.post(
+            f"{OPENROUTER_BASE_URL}/chat/completions", headers=headers, json=payload
+        )
         if res.status_code >= 400:
             raise RuntimeError(
                 f"OpenRouter error ({res.status_code}) for model {model}: {res.text}"
@@ -285,9 +302,13 @@ async def _openrouter_generate_to_job(
                     image_url = part.get("image_url")
                     if isinstance(image_url, str):
                         return await as_public_url(image_url)
-                    if isinstance(image_url, dict) and isinstance(image_url.get("url"), str):
+                    if isinstance(image_url, dict) and isinstance(
+                        image_url.get("url"), str
+                    ):
                         return await as_public_url(image_url["url"])
-                if part.get("type") == "image_base64" and isinstance(part.get("data"), str):
+                if part.get("type") == "image_base64" and isinstance(
+                    part.get("data"), str
+                ):
                     return await _store_image(part["data"], job_id, slot_index)
 
     raise RuntimeError(f"Unsupported image response shape from OpenRouter: {body}")
@@ -360,7 +381,10 @@ async def _run_pose_job(job_id: str) -> None:
         async with semaphore:
             await _run_slot(job_id, slot_index, tier)
 
-    tasks = [asyncio.create_task(run_with_limit(slot_index, tier)) for slot_index, tier in slot_plan]
+    tasks = [
+        asyncio.create_task(run_with_limit(slot_index, tier))
+        for slot_index, tier in slot_plan
+    ]
     failures = 0
     for task in tasks:
         try:
@@ -384,10 +408,14 @@ async def _run_pose_job(job_id: str) -> None:
 
 
 @app.post("/api/pose-variants", response_model=PoseVariantJob)
-async def create_pose_variants(reference_image: UploadFile = File(...)) -> PoseVariantJob:
+async def create_pose_variants(
+    reference_image: UploadFile = File(...),
+) -> PoseVariantJob:
     image_bytes = await reference_image.read()
     mime = reference_image.content_type or "image/jpeg"
-    reference_image_data_url = f"data:{mime};base64,{base64.b64encode(image_bytes).decode('ascii')}"
+    reference_image_data_url = (
+        f"data:{mime};base64,{base64.b64encode(image_bytes).decode('ascii')}"
+    )
     job_id = uuid4().hex
     job = PoseVariantJob(
         job_id=job_id,
@@ -398,7 +426,9 @@ async def create_pose_variants(reference_image: UploadFile = File(...)) -> PoseV
         error=None,
     )
     async with _jobs_lock:
-        _pose_jobs[job_id] = PoseJobState(job=job, reference_image_data_url=reference_image_data_url)
+        _pose_jobs[job_id] = PoseJobState(
+            job=job, reference_image_data_url=reference_image_data_url
+        )
     asyncio.create_task(_run_pose_job(job_id))
     return job
 

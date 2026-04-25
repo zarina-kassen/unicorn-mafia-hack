@@ -3,4 +3,6 @@
 data/
 sample/
 node_modules/
+.env
+backend/.env
 

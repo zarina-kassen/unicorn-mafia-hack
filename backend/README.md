@@ -25,6 +25,10 @@ Endpoints:
 - `POST /api/guidance` — `PoseContext` → `GuidanceResponse`
 - `POST /api/pose-variants` — multipart `reference_image` → async job
 - `GET  /api/pose-variants/{job_id}` — poll generated pose gallery status
+- `POST /api/memory/onboarding` — seed taste memory from up to 5 extracted entries
+- `POST /api/memory/feedback` — store selection/outcome feedback as memory lessons
+- `POST /api/memory/preferences` — persist per-source learning preferences
+- `POST /api/memory/reset` — soft/hard user memory reset request
 - `GET  /generated/...` — temporary local generated image files
 
 ## Model
@@ -52,7 +56,22 @@ IMAGE_SIZE=1024x1536
 IMAGE_QUALITY=medium
 IMAGE_INPUT_FIDELITY=high
 GENERATED_TTL_SECONDS=21600
+MUBIT_API_KEY=mbt_...
+MUBIT_ENDPOINT=https://api.mubit.ai
+MUBIT_TRANSPORT=auto
 ```
+
+### Mubit personalization
+
+When `MUBIT_API_KEY` is set:
+
+- `/api/pose-variants` fetches a short personalization block from Mubit and injects it
+  into pose-generation prompts.
+- `/api/memory/onboarding` stores camera-roll seed preferences (up to 5 entries).
+- `/api/memory/feedback` records interaction outcomes (`success`/`failure`) to improve
+  future candidate generation.
+
+If Mubit is unavailable, endpoints fail open (core generation still works).
 
 ## Tests
 

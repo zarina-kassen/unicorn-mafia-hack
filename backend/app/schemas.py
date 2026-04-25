@@ -73,3 +73,49 @@ class PoseVariantJob(BaseModel):
     total: int = 10
     results: list[PoseVariantResult] = Field(default_factory=list)
     error: str | None = None
+
+
+class MemorySeedEntry(BaseModel):
+    """A single onboarding reference with extracted preference tags."""
+
+    source_ref: str
+    pose_tags: list[str] = Field(default_factory=list)
+    style_tags: list[str] = Field(default_factory=list)
+    composition_tags: list[str] = Field(default_factory=list)
+    scene_tags: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.8, ge=0.0, le=1.0)
+
+
+class MemoryOnboardingRequest(BaseModel):
+    """Seed user taste profile from up to 5 selected photos."""
+
+    entries: list[MemorySeedEntry] = Field(min_length=1, max_length=5)
+
+
+class MemoryFeedbackRequest(BaseModel):
+    """User interaction outcome to reinforce memory."""
+
+    event: str
+    pose_template_id: str | None = None
+    scene_tags: list[str] = Field(default_factory=list)
+    outcome_score: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
+class MemoryStatusResponse(BaseModel):
+    """Simple response for memory write operations."""
+
+    ok: bool
+
+
+class MemoryPreferencesRequest(BaseModel):
+    """Privacy and learning controls for user memory sources."""
+
+    allow_camera_roll: bool = True
+    allow_instagram: bool = False
+    allow_pinterest: bool = False
+
+
+class MemoryResetRequest(BaseModel):
+    """Clear or reduce remembered user taste profile."""
+
+    hard_reset: bool = False

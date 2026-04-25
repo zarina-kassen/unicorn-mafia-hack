@@ -132,6 +132,7 @@ POSE_VARIANTS: tuple[PoseVariantSpec, ...] = (
 
 _jobs: dict[str, PoseVariantJob] = {}
 _job_dirs: dict[str, Path] = {}
+_job_personalization: dict[str, str] = {}
 _lock = Lock()
 
 
@@ -170,6 +171,7 @@ def cleanup_old_jobs() -> None:
         with _lock:
             _jobs.pop(job_id, None)
             _job_dirs.pop(job_id, None)
+            _job_personalization.pop(job_id, None)
 
 
 async def create_pose_variant_job(reference_image: UploadFile) -> PoseVariantJob:
@@ -200,6 +202,13 @@ async def create_pose_variant_job(reference_image: UploadFile) -> PoseVariantJob
     return job
 
 
+def set_pose_variant_personalization(job_id: str, personalization: str) -> None:
+    if not personalization.strip():
+        return
+    with _lock:
+        _job_personalization[job_id] = personalization.strip()[:1200]
+
+
 def get_pose_variant_job(job_id: str) -> PoseVariantJob | None:
     cleanup_old_jobs()
     with _lock:
@@ -215,11 +224,23 @@ def _prompt_for_pose(spec: PoseVariantSpec) -> str:
     )
 
 
+def _prompt_for_pose_with_personalization(spec: PoseVariantSpec, personalization: str) -> str:
+    if not personalization:
+        return _prompt_for_pose(spec)
+    return (
+        f"{_prompt_for_pose(spec)}\n\n"
+        "User taste preferences for this generation:\n"
+        f"{personalization}\n\n"
+        "Apply these preferences where compatible with good pose coaching."
+    )
+
+
 def run_pose_variant_job(job_id: str) -> None:
     job_dir = _job_dirs[job_id]
     reference_path = next(job_dir.glob("reference.*"))
     client = OpenAI()
     results: list[PoseVariantResult] = []
+    personalization = _job_personalization.get(job_id, "")
 
     _update_job(job_id, status="generating", progress=0, error=None)
 
@@ -229,7 +250,7 @@ def run_pose_variant_job(job_id: str) -> None:
                 response = client.images.edit(
                     model=IMAGE_MODEL,
                     image=image_file,
-                    prompt=_prompt_for_pose(spec),
+                    prompt=_prompt_for_pose_with_personalization(spec, personalization),
                     size=IMAGE_SIZE,
                     quality=IMAGE_QUALITY,
                     input_fidelity=IMAGE_INPUT_FIDELITY,
@@ -259,3 +280,15 @@ def run_pose_variant_job(job_id: str) -> None:
     except Exception as exc:  # noqa: BLE001 - generation provider failures are surfaced as job errors
         logger.exception("Pose variant job failed: %s", job_id)
         _update_job(job_id, status="failed", error=_safe_error(exc), results=results)
+
+
+def reorder_pose_variants(order: list[str]) -> None:
+    """Reorder tuple globally for next generation request if needed."""
+    if not order:
+        return
+    rank = {pose_id: idx for idx, pose_id in enumerate(order)}
+    sorted_variants = sorted(
+        POSE_VARIANTS,
+        key=lambda spec: rank.get(spec.id, len(rank) + 100),
+    )
+    globals()["POSE_VARIANTS"] = tuple(sorted_variants)

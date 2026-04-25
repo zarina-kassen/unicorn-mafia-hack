@@ -318,6 +318,25 @@ button {
   mask-image: linear-gradient(90deg, transparent, #000 11%, #000 89%, transparent);
 }
 
+.memory-seed-row,
+.memory-controls-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 0 16px;
+  margin-bottom: 10px;
+}
+
+.memory-controls-row {
+  flex-wrap: wrap;
+}
+
+.memory-status {
+  padding: 0 16px 8px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.75rem;
+}
+
 .gallery-track {
   display: flex;
   width: max-content;

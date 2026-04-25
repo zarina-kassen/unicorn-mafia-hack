@@ -287,7 +287,7 @@ function App() {
               <h1 className="m-0 max-w-[310px] text-[clamp(2.2rem,11vw,3.8rem)] leading-[0.92] tracking-[-0.07em]">
                 Line up before the shot.
               </h1>
-              <p className={`m-0 max-w-[300px] text-[0.98rem] leading-[1.45] text-cam-ink-muted ${cameraState.status === 'idle' || cameraState.status === 'requesting' ? '' : 'text-cam-error'}`}>
+              <p className={`m-0 max-w-[300px] text-[0.98rem] leading-[1.45] ${cameraState.status === 'idle' || cameraState.status === 'requesting' ? 'text-cam-ink-muted' : 'text-cam-error'}`}>
                 {launchMessage}
               </p>
               {cameraState.status !== 'requesting' &&

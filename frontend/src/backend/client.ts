@@ -87,6 +87,22 @@ export function subscribePoseVariantJob(
   baseUrl = '',
 ): () => void {
   const stream = new EventSource(`${baseUrl}/api/pose-variants/${jobId}/events`)
+  let debounce: ReturnType<typeof setTimeout> | null = null
+  /** True after React cleanup calls `close()` — must not treat as a failure. */
+  let closedIntentionally = false
+
+  const clearDebounce = () => {
+    if (debounce !== null) {
+      clearTimeout(debounce)
+      debounce = null
+    }
+  }
+
+  stream.onopen = () => {
+    if (closedIntentionally) return
+    clearDebounce()
+  }
+
   stream.onmessage = (message) => {
     try {
       const parsed = JSON.parse(message.data) as PoseVariantEvent
@@ -95,8 +111,26 @@ export function subscribePoseVariantJob(
       // Ignore malformed events.
     }
   }
-  stream.onerror = (event) => onError(event)
-  return () => stream.close()
+
+  // Browsers fire `error` while reconnecting; `close()` also fires `error` with
+  // CLOSED state. Only surface failure when the socket dies unexpectedly.
+  stream.onerror = () => {
+    if (closedIntentionally) return
+    clearDebounce()
+    debounce = setTimeout(() => {
+      debounce = null
+      if (closedIntentionally) return
+      if (stream.readyState === EventSource.CLOSED) {
+        onError(new Event('eventsource-closed'))
+      }
+    }, 2500)
+  }
+
+  return () => {
+    closedIntentionally = true
+    clearDebounce()
+    stream.close()
+  }
 }
 
 /**

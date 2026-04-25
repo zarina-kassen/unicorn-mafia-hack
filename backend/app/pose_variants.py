@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
-from typing import cast
+from typing import Any, cast
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -27,7 +27,7 @@ POSE_VARIANT_TOTAL = 6
 
 
 def _make_variation_prompt(
-  title: str, instruction: str, rationale: str, slot_index: int
+    title: str, instruction: str, rationale: str, slot_index: int
 ) -> str:
     """Create a prompt for image generation."""
     return (
@@ -85,26 +85,39 @@ async def _generate_and_store_image(
         # Extract image from response - OpenRouter returns images in message.images
         message = response.choices[0].message
         if response.choices and hasattr(message, "images") and message.images:  # type: ignore[attr-defined]
-            images_data = message.images  # type: ignore[attr-defined]
-            if images_data:
+            # Cast to Any to handle the ~AlwaysFalsy type from OpenAI library
+            images_attr = cast(Any, message.images)  # type: ignore[attr-defined]
+            if images_attr:
                 try:
                     # Validate response structure using Pydantic model
-                    first_image = OpenRouterImage.model_validate(images_data[0])
+                    first_image = OpenRouterImage.model_validate(images_attr[0])
                     image_data_url = first_image.image_url.url
                 except Exception as exc:
-                    logger.warning("Image generation failed for slot %d: Invalid image format: %s", slot_index, exc)
+                    logger.warning(
+                        "Image generation failed for slot %d: Invalid image format: %s",
+                        slot_index,
+                        exc,
+                    )
                     return None
 
                 if image_data_url:
                     image_url = await _store_base64_image(image_data_url, job_id)
                 else:
-                    logger.warning("Image generation failed for slot %d: No image URL in response", slot_index)
+                    logger.warning(
+                        "Image generation failed for slot %d: No image URL in response",
+                        slot_index,
+                    )
                     return None
             else:
-                logger.warning("Image generation failed for slot %d: Empty images array", slot_index)
+                logger.warning(
+                    "Image generation failed for slot %d: Empty images array",
+                    slot_index,
+                )
                 return None
         else:
-            logger.warning("Image generation failed for slot %d: No images in response", slot_index)
+            logger.warning(
+                "Image generation failed for slot %d: No images in response", slot_index
+            )
             return None
     except Exception as exc:
         logger.warning("Image generation failed for slot %d: %s", slot_index, exc)

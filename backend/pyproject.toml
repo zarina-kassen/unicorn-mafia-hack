@@ -16,6 +16,7 @@ dependencies = [
     "asyncpg>=0.29.0",
     "clerk-backend-api>=5.0.0",
     "openai>=1.0.0",
+    "mubit-sdk>=0.7.0",
 ]
 
 [dependency-groups]

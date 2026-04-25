@@ -28,7 +28,7 @@ class GeneratedImage(Table, tablename="generated_images"):
 async def init_db() -> None:
     """Initialize the database schema for image storage."""
     from piccolo.table import create_tables
-    
+
     await asyncio.to_thread(create_tables, GeneratedImage, if_not_exists=True)
     logger.info("Database schema initialized")
 
@@ -57,7 +57,8 @@ async def store_image(
                 }
             )
             .where(
-                (GeneratedImage.job_id == job_id) & (GeneratedImage.filename == filename)
+                (GeneratedImage.job_id == job_id)
+                & (GeneratedImage.filename == filename)
             )
             .run()
         )

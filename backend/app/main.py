@@ -7,7 +7,7 @@ import logging
 
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from .auth.clerk import require_auth

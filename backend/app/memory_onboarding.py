@@ -55,7 +55,9 @@ def _safe_parse_entry(raw: dict[str, Any], source_ref: str) -> MemorySeedEntry |
             confidence=float(raw.get("confidence", 0.7)),
         )
     except Exception:  # noqa: BLE001
-        logger.exception("Failed to parse onboarding extraction JSON for %s", source_ref)
+        logger.exception(
+            "Failed to parse onboarding extraction JSON for %s", source_ref
+        )
         return None
 
 
@@ -73,24 +75,27 @@ def _prompt_for(filename: str) -> str:
     )
 
 
-def _extract_single(client: OpenAI, image: OnboardingImageInput) -> MemorySeedEntry | None:
+def _extract_single(
+    client: OpenAI, image: OnboardingImageInput
+) -> MemorySeedEntry | None:
     b64 = base64.b64encode(image.data).decode("ascii")
     data_url = f"data:{image.content_type};base64,{b64}"
     try:
-        response = client.responses.create(
+        # Use the standard chat completions API instead of responses API for better type compatibility
+        response = client.chat.completions.create(
             model=VISION_MODEL,
-            input=[
+            messages=[
                 {
                     "role": "user",
                     "content": [
-                        {"type": "input_text", "text": _prompt_for(image.filename)},
-                        {"type": "input_image", "image_url": data_url},
+                        {"type": "text", "text": _prompt_for(image.filename)},
+                        {"type": "image_url", "image_url": {"url": data_url}},
                     ],
                 }
             ],
-            text={"format": {"type": "json_object"}},
+            response_format={"type": "json_object"},
         )
-        text = (response.output_text or "").strip()
+        text = (response.choices[0].message.content or "").strip()
         if not text:
             return None
         parsed = json.loads(text)
@@ -102,7 +107,9 @@ def _extract_single(client: OpenAI, image: OnboardingImageInput) -> MemorySeedEn
         return None
 
 
-def extract_memory_seed_entries(images: list[OnboardingImageInput]) -> list[MemorySeedEntry]:
+def extract_memory_seed_entries(
+    images: list[OnboardingImageInput],
+) -> list[MemorySeedEntry]:
     """Convert uploaded onboarding images into memory seed entries.
 
     This function intentionally fails open: one bad image should not prevent all

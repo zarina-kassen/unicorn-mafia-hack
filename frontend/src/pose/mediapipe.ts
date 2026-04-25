@@ -14,18 +14,43 @@ const WASM_BASE_URL =
 const MODEL_ASSET_URL =
   'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task'
 
+/** Heavier bundle used only for still-image silhouette extraction (segmentation masks). */
+const IMAGE_POSE_MODEL_URL =
+  'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task'
+
+const POSE_LANDMARKER_OPTIONS_BASE = {
+  baseOptions: {
+    modelAssetPath: MODEL_ASSET_URL,
+    delegate: 'GPU' as const,
+  },
+  numPoses: 1,
+  minPoseDetectionConfidence: 0.5,
+  minPosePresenceConfidence: 0.5,
+  minTrackingConfidence: 0.5,
+}
+
 export async function createPoseLandmarker(): Promise<PoseLandmarker> {
   const fileset = await FilesetResolver.forVisionTasks(WASM_BASE_URL)
   return PoseLandmarker.createFromOptions(fileset, {
+    ...POSE_LANDMARKER_OPTIONS_BASE,
+    runningMode: 'VIDEO',
+  })
+}
+
+/** One-shot detection on still images: segmentation mask + landmarks for generated poses. */
+export async function createPoseImageLandmarker(): Promise<PoseLandmarker> {
+  const fileset = await FilesetResolver.forVisionTasks(WASM_BASE_URL)
+  return PoseLandmarker.createFromOptions(fileset, {
     baseOptions: {
-      modelAssetPath: MODEL_ASSET_URL,
+      modelAssetPath: IMAGE_POSE_MODEL_URL,
       delegate: 'GPU',
     },
-    runningMode: 'VIDEO',
     numPoses: 1,
     minPoseDetectionConfidence: 0.5,
     minPosePresenceConfidence: 0.5,
     minTrackingConfidence: 0.5,
+    runningMode: 'IMAGE',
+    outputSegmentationMasks: true,
   })
 }
 

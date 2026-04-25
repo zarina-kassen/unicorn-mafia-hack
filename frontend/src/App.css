@@ -13,9 +13,17 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  width: 100%;
+  max-width: 100vw;
+}
+
 body {
   margin: 0;
-  background: #010101;
+  min-height: 100dvh;
+  background: var(--camera-black);
   color: var(--camera-ink);
   font-family: 'SF Pro Display', 'Avenir Next', 'Helvetica Neue', sans-serif;
   touch-action: manipulation;
@@ -33,21 +41,24 @@ button {
 }
 
 .stage-two-shell {
-  width: min(100%, 430px);
+  width: 100%;
+  max-width: none;
   min-height: 100dvh;
-  margin: 0 auto;
-  padding: max(8px, env(safe-area-inset-top, 0px)) var(--page-pad)
-    max(8px, env(safe-area-inset-bottom, 0px));
+  min-height: 100svh;
+  margin: 0;
+  padding: 0;
 }
 
 .camera-preview {
   position: relative;
-  height: min(93dvh, 860px);
+  width: 100%;
+  min-height: 100dvh;
+  min-height: 100svh;
   overflow: hidden;
-  border: 1px solid var(--camera-hairline);
-  border-radius: 22px;
+  border: none;
+  border-radius: 0;
   background: var(--camera-black);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.54);
+  box-shadow: none;
   isolation: isolate;
 }
 
@@ -80,9 +91,9 @@ button {
 
 .camera-top-bar {
   position: absolute;
-  top: 12px;
-  left: 12px;
-  right: 12px;
+  top: max(12px, env(safe-area-inset-top, 0px));
+  left: max(12px, env(safe-area-inset-left, 0px));
+  right: max(12px, env(safe-area-inset-right, 0px));
   z-index: 2;
   display: flex;
   align-items: center;
@@ -170,7 +181,7 @@ button {
   position: absolute;
   z-index: 3;
   left: 50%;
-  bottom: 170px;
+  bottom: calc(170px + env(safe-area-inset-bottom, 0px));
   width: 72px;
   height: 72px;
   margin-left: -36px;
@@ -188,6 +199,11 @@ button {
   height: 50px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.95);
+  transition: transform 0.12s ease-out;
+}
+
+.shutter-button:active:not(:disabled) > span {
+  transform: scale(0.9);
 }
 
 .shutter-button:disabled {
@@ -195,11 +211,53 @@ button {
   cursor: progress;
 }
 
+@keyframes shutter-flash {
+  0% {
+    opacity: 0;
+  }
+
+  22% {
+    opacity: 0.96;
+  }
+
+  40% {
+    opacity: 0.96;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+.shutter-flash-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  background: #fff;
+  opacity: 0;
+}
+
+.shutter-flash-overlay.is-active {
+  animation: shutter-flash 0.16s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shutter-button > span {
+    transition: none;
+  }
+
+  .shutter-flash-overlay.is-active {
+    animation: none;
+    opacity: 0;
+  }
+}
+
 .camera-bottom-hint {
   position: absolute;
-  left: 14px;
-  right: 14px;
-  bottom: 230px;
+  left: max(14px, env(safe-area-inset-left, 0px));
+  right: max(14px, env(safe-area-inset-right, 0px));
+  bottom: calc(230px + env(safe-area-inset-bottom, 0px));
   z-index: 2;
   display: flex;
   flex-direction: column;
@@ -306,17 +364,44 @@ button {
 
 .pose-gallery {
   position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: 8px;
+  left: max(8px, env(safe-area-inset-left, 0px));
+  right: max(8px, env(safe-area-inset-right, 0px));
+  bottom: max(8px, env(safe-area-inset-bottom, 0px));
   z-index: 3;
   border: 1px solid var(--camera-hairline);
   border-radius: 18px;
-  padding: 9px 0 10px;
+  padding: 0 0 10px;
   background: linear-gradient(180deg, rgba(33, 38, 48, 0.92), rgba(12, 14, 20, 0.92));
   box-shadow: 0 14px 44px rgba(0, 0, 0, 0.46);
   overflow: hidden;
   backdrop-filter: blur(18px);
+  will-change: transform;
+  transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  touch-action: auto;
+}
+
+.pose-gallery.is-dragging {
+  transition: none;
+}
+
+.gallery-sheet-chrome {
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  padding-top: 7px;
+}
+
+.gallery-sheet-chrome:active {
+  cursor: grabbing;
+}
+
+.gallery-sheet-handle {
+  width: 36px;
+  height: 4px;
+  margin: 0 auto 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .gallery-heading {
@@ -324,7 +409,7 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 0 10px 7px;
+  padding: 0 10px 6px;
 }
 
 .gallery-heading p,
@@ -355,7 +440,8 @@ button {
   color: rgba(255, 255, 255, 0.82);
   background: rgba(255, 255, 255, 0.06);
   font-size: 0.78rem;
-  cursor: default;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
 .gallery-error {
@@ -462,10 +548,28 @@ button {
 
 @media (max-width: 390px) {
   .camera-bottom-hint {
-    bottom: 210px;
+    bottom: calc(210px + env(safe-area-inset-bottom, 0px));
   }
 
   .shutter-button {
-    bottom: 155px;
+    bottom: calc(155px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (min-width: 760px) {
+  .stage-two-shell {
+    width: min(100%, 980px);
+    max-width: 980px;
+    margin: 0 auto;
+    padding: max(var(--page-pad), env(safe-area-inset-top, 0px)) var(--page-pad)
+      max(18px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .camera-preview {
+    min-height: min(78dvh, 760px);
+    height: min(78dvh, 760px);
+    border: 1px solid var(--camera-hairline);
+    border-radius: 34px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.54);
   }
 }

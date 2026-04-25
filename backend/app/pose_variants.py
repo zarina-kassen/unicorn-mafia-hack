@@ -83,9 +83,9 @@ async def _generate_and_store_image(
         )
 
         # Extract image from response - OpenRouter returns images in message.images
-        message = cast(dict, response.choices[0].message)
-        if response.choices and message.get("images"):
-            images = message.get("images")
+        message = response.choices[0].message
+        if response.choices and hasattr(message, "images") and message.images:  # type: ignore[attr-defined]
+            images: list = cast(list, message.images)  # type: ignore[attr-defined]
             if images:
                 try:
                     # Validate response structure using Pydantic model

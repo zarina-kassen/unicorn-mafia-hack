@@ -124,6 +124,9 @@ Endpoints:
 - `GET  /health` — `{ "status": "ok", "model": "gateway/openai:gpt-5.3" }`
 - `GET  /api/templates` — template metadata
 - `POST /api/guidance` — `PoseContext` → `GuidanceResponse`
+- `GET  /api/billing/account` — current balance + costs
+- `POST /api/billing/checkout` — creates Stripe Checkout for `pack_100` / `pack_200`
+- `POST /api/billing/webhook` — Stripe webhook receiver (dedupes replayed events)
 
 The agent uses `gateway/openai:gpt-5.3` by default; set `AGENT_MODEL` in
 `.env` to any model string supported by Pydantic AI Gateway (e.g.
@@ -159,6 +162,31 @@ cd frontend && bun run lint && bun run build
 - No auth / rate limiting / persistent logging on the backend.
 - Chrome desktop / Android in practice; iOS Safari has limited
   `getUserMedia` behavior for some flows.
+
+## 10. Credit packs and abuse protection
+
+The backend now enforces usage at API boundaries:
+
+- **Free monthly credits:** auto-granted per user (`FREE_MONTHLY_CREDITS`, default `80`).
+- **Paid credit packs:** one-time Stripe Checkout top-ups (`pack_100`, `pack_200`).
+- **Server-side charging:** guidance and pose-generation debit credits before work starts.
+- **Server-side limits:** per-user and per-IP rate limits, per-user/global pose job concurrency limits.
+- **Failure safety:** failed pose generation jobs are auto-refunded once.
+
+### Stripe local setup
+
+1. Configure these in `backend/.env`:
+   - `STRIPE_SECRET_KEY`
+   - `STRIPE_WEBHOOK_SECRET`
+   - `STRIPE_PRICE_100_CREDITS`
+   - `STRIPE_PRICE_200_CREDITS`
+2. Forward Stripe events to local backend:
+
+```bash
+stripe listen --forward-to localhost:8000/api/billing/webhook
+```
+
+3. Ensure your frontend URL is passed as `success_url` / `cancel_url` when creating checkout sessions.
 
 ## 9. Suggested next steps
 

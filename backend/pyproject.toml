@@ -6,11 +6,15 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.136.1",
+    "openai>=2.8.1",
     "uvicorn[standard]>=0.46.0",
     "pydantic>=2.8",
     "pydantic-ai-slim[openai]>=1.16",
+    "mubit-sdk>=0.5.3",
+    "python-multipart>=0.0.20",
     "python-dotenv>=1.0.1",
-    "python-multipart>=0.0.9",
+    "clerk-backend-api>=5.0",
+    "stripe>=12.5.0",
 ]
 
 [dependency-groups]

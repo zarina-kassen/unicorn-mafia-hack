@@ -2,45 +2,63 @@
 
 from __future__ import annotations
 
-import asyncio
-import base64
-import json
 import logging
 import os
-from dataclasses import dataclass, field
 from functools import lru_cache
-from pathlib import Path
-from typing import AsyncIterator
-from uuid import uuid4
 
 from dotenv import load_dotenv
-import httpx
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic_ai import Agent
 
+from .auth import require_auth
+from .billing import (
+    CONFIG,
+    add_credits,
+    check_rate_limit,
+    create_checkout_session,
+    credit_refund_for_failed_job,
+    get_account_state,
+    handle_stripe_webhook,
+    init_billing_store,
+    spend_credits,
+)
+from .mubit_memory import get_mubit_memory
+from .pose_variants import (
+    GENERATED_ROOT,
+    cancel_pose_variant_job,
+    count_active_pose_jobs,
+    count_user_active_pose_jobs,
+    create_pose_variant_job,
+    get_pose_variant_job,
+    reorder_pose_variants,
+    run_pose_variant_job,
+    set_pose_variant_owner,
+    set_pose_variant_personalization,
+)
 from .schemas import (
+    BillingAccountResponse,
+    CheckoutRequest,
+    CheckoutResponse,
     GuidanceResponse,
     Landmark,
+    MemoryFeedbackRequest,
+    MemoryOnboardingRequest,
+    MemoryPreferencesRequest,
+    MemoryResetRequest,
+    MemoryStatusResponse,
     PoseContext,
     PoseVariantJob,
-    PoseVariantResult,
     TemplateMeta,
 )
 from .templates import TEMPLATES
 
-load_dotenv(override=True)
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 AGENT_MODEL = os.environ.get("AGENT_MODEL", "gateway/openai:gpt-5.3")
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-FAST_IMAGE_MODEL = os.environ.get("FAST_IMAGE_MODEL", "black-forest-labs/flux-schnell")
-HQ_IMAGE_MODEL = os.environ.get("HQ_IMAGE_MODEL", "openai/gpt-image-1")
-POSE_VARIANT_TOTAL = 6
 
 SYSTEM_PROMPT = """\
 You are a real-time photo-posing coach. Each request represents one pose sample
@@ -103,16 +121,13 @@ def get_agent() -> Agent[None, GuidanceResponse]:
     )
 
 app = FastAPI(title="frame-mog")
-_jobs_lock = asyncio.Lock()
-_pose_jobs: dict[str, "PoseJobState"] = {}
-
-generated_dir = Path(__file__).resolve().parent.parent / "generated"
-generated_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/generated", StaticFiles(directory=generated_dir), name="generated")
+GENERATED_ROOT.mkdir(parents=True, exist_ok=True)
+app.mount("/generated", StaticFiles(directory=GENERATED_ROOT), name="generated")
+init_billing_store()
 
 _allowed_origins = os.environ.get(
     "ALLOWED_ORIGINS",
-    "http://localhost:5173,http://127.0.0.1:5173",
+    "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174",
 ).split(",")
 app.add_middleware(
     CORSMiddleware,
@@ -129,311 +144,254 @@ def health() -> dict[str, str]:
 
 
 @app.get("/api/templates", response_model=list[TemplateMeta])
-def list_templates() -> list[TemplateMeta]:
+def list_templates(_user_id: str = Depends(require_auth)) -> list[TemplateMeta]:
     return TEMPLATES
 
 
+def _client_ip(request: Request) -> str:
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _enforce_guidance_limits(user_id: str, request: Request) -> None:
+    check_rate_limit(
+        f"guidance:user:{user_id}",
+        max_count=CONFIG.guidance_rate_per_hour,
+        window_seconds=60 * 60,
+    )
+    check_rate_limit(
+        f"guidance:ip:{_client_ip(request)}",
+        max_count=max(CONFIG.guidance_rate_per_hour * 2, 60),
+        window_seconds=60 * 60,
+    )
+
+
+def _enforce_pose_job_limits(user_id: str, request: Request) -> None:
+    account = get_account_state(user_id)
+    per_day_limit = (
+        CONFIG.pose_jobs_per_day_paid if account["plan_type"] != "free" else CONFIG.pose_jobs_per_day_free
+    )
+    check_rate_limit(
+        f"pose:user:{user_id}",
+        max_count=per_day_limit,
+        window_seconds=24 * 60 * 60,
+    )
+    check_rate_limit(
+        f"pose:ip:{_client_ip(request)}",
+        max_count=max(per_day_limit * 2, 10),
+        window_seconds=24 * 60 * 60,
+    )
+    check_rate_limit(
+        "pose:global:hour",
+        max_count=CONFIG.max_pose_jobs_per_hour_global,
+        window_seconds=60 * 60,
+    )
+    global_active = count_active_pose_jobs()
+    if global_active >= int(os.environ.get("MAX_CONCURRENT_POSE_JOBS_GLOBAL", "12")):
+        raise HTTPException(
+            status_code=429,
+            detail={"code": "global_capacity_reached", "message": "Generation capacity is currently full."},
+        )
+    user_active = count_user_active_pose_jobs(user_id)
+    if user_active >= int(os.environ.get("MAX_ACTIVE_POSE_JOBS_PER_USER", "2")):
+        raise HTTPException(
+            status_code=429,
+            detail={"code": "user_capacity_reached", "message": "Too many active jobs for this user."},
+        )
+
+
 @app.post("/api/guidance", response_model=GuidanceResponse)
-async def guidance(ctx: PoseContext) -> GuidanceResponse:
+async def guidance(
+    ctx: PoseContext,
+    request: Request,
+    user_id: str = Depends(require_auth),
+) -> GuidanceResponse:
+    _enforce_guidance_limits(user_id, request)
+    spend_credits(
+        user_id,
+        amount=CONFIG.guidance_cost,
+        event_type="guidance_request",
+    )
     try:
         result = await get_agent().run(_render_prompt(ctx))
     except Exception as exc:  # noqa: BLE001 — surface all provider errors uniformly
         logger.exception("Guidance agent failed")
+        add_credits(
+            user_id,
+            amount=CONFIG.guidance_cost,
+            event_type="guidance_refund",
+            metadata={"reason": "provider_error"},
+        )
         raise HTTPException(status_code=502, detail=f"agent error: {exc}") from exc
     return result.output
 
 
-@dataclass
-class PoseJobState:
-    job: PoseVariantJob
-    reference_image_data_url: str
-    events: asyncio.Queue[str] = field(default_factory=asyncio.Queue)
-
-
-def _pick_template(slot_index: int) -> TemplateMeta:
-    return TEMPLATES[slot_index % len(TEMPLATES)]
-
-
-def _make_variation_prompt(template: TemplateMeta, slot_index: int, tier: str) -> str:
-    tier_style = (
-        "fast preview render, keep composition simple but realistic"
-        if tier == "fast"
-        else "high quality portrait photo look, detailed skin tones, natural lighting"
-    )
-    return (
-        "Generate a realistic selfie-style portrait of the same person from the reference photo.\n"
-        "Preserve face identity, skin tone, hair, and overall likeness from the reference.\n"
-        "Do not stylize as cartoon/illustration; avoid blur, artifacts, and distorted anatomy.\n"
-        f"Pose: {template.name}. Description: {template.description}.\n"
-        f"Style hint: {tier_style}.\n"
-        f"Variation seed: {slot_index + 1}.\n"
-        "Framing: upper body, portrait orientation, social-media ready, natural expression."
-    )
-
-
-def _event_payload(kind: str, job: PoseVariantJob, result: PoseVariantResult | None = None) -> str:
-    payload: dict[str, object] = {"type": kind, "job": job.model_dump()}
-    if result:
-        payload["result"] = result.model_dump()
-    return f"data: {json.dumps(payload)}\n\n"
-
-
-async def _push_event(job_id: str, kind: str, result: PoseVariantResult | None = None) -> None:
-    async with _jobs_lock:
-        state = _pose_jobs.get(job_id)
-        if not state:
-            return
-        await state.events.put(_event_payload(kind, state.job, result))
-
-
-async def _store_image(b64_or_url: str, job_id: str, slot_index: int) -> str:
-    if b64_or_url.startswith("http://") or b64_or_url.startswith("https://"):
-        return b64_or_url
-    raw_b64 = b64_or_url.split(",", 1)[1] if b64_or_url.startswith("data:") else b64_or_url
-    binary = base64.b64decode(raw_b64)
-    file_name = f"{job_id}-{slot_index + 1}.png"
-    out_path = generated_dir / file_name
-    out_path.write_bytes(binary)
-    return f"/generated/{file_name}"
-
-
-async def _openrouter_generate_to_job(
-    prompt: str,
-    model: str,
-    job_id: str,
-    slot_index: int,
-    reference_image_data_url: str | None = None,
-) -> str:
-    async def as_public_url(value: str) -> str:
-        if value.startswith("http://") or value.startswith("https://"):
-            return value
-        return await _store_image(value, job_id, slot_index)
-
-    if not OPENROUTER_API_KEY:
-        raise RuntimeError("OPENROUTER_API_KEY is not set")
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    message_content: str | list[dict[str, object]]
-    if reference_image_data_url:
-        message_content = [
-            {"type": "text", "text": prompt},
-            {"type": "image_url", "image_url": {"url": reference_image_data_url}},
-        ]
-    else:
-        message_content = prompt
-
-    payload = {
-        "model": model,
-        "modalities": ["image"],
-        "messages": [{"role": "user", "content": message_content}],
-    }
-    timeout = httpx.Timeout(45.0, connect=10.0)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        res = await client.post(f"{OPENROUTER_BASE_URL}/chat/completions", headers=headers, json=payload)
-        if res.status_code >= 400:
-            raise RuntimeError(
-                f"OpenRouter error ({res.status_code}) for model {model}: {res.text}"
-            )
-        body = res.json()
-
-    # OpenRouter image responses may vary by upstream model/provider shape.
-    data = body.get("data") or []
-    if data:
-        first = data[0]
-        b64 = first.get("b64_json")
-        if b64:
-            return await _store_image(b64, job_id, slot_index)
-        url = first.get("url") or first.get("image_url")
-        if isinstance(url, str):
-            return await as_public_url(url)
-
-    images = body.get("images") or []
-    if images:
-        first = images[0]
-        b64 = first.get("b64_json")
-        if b64:
-            return await _store_image(b64, job_id, slot_index)
-        image_url = first.get("image_url") or first.get("url")
-        if isinstance(image_url, str):
-            return await as_public_url(image_url)
-        if isinstance(image_url, dict) and isinstance(image_url.get("url"), str):
-            return await as_public_url(image_url["url"])
-
-    choices = body.get("choices") or []
-    if choices:
-        message = choices[0].get("message") or {}
-        message_images = message.get("images") or []
-        if message_images:
-            first = message_images[0]
-            b64 = first.get("b64_json")
-            if b64:
-                return await _store_image(b64, job_id, slot_index)
-            image_url = first.get("image_url") or first.get("url")
-            if isinstance(image_url, str):
-                return await as_public_url(image_url)
-            if isinstance(image_url, dict) and isinstance(image_url.get("url"), str):
-                return await as_public_url(image_url["url"])
-
-        content = message.get("content")
-        if isinstance(content, list):
-            for part in content:
-                if not isinstance(part, dict):
-                    continue
-                if part.get("type") == "image_url":
-                    image_url = part.get("image_url")
-                    if isinstance(image_url, str):
-                        return await as_public_url(image_url)
-                    if isinstance(image_url, dict) and isinstance(image_url.get("url"), str):
-                        return await as_public_url(image_url["url"])
-                if part.get("type") == "image_base64" and isinstance(part.get("data"), str):
-                    return await _store_image(part["data"], job_id, slot_index)
-
-    raise RuntimeError(f"Unsupported image response shape from OpenRouter: {body}")
-
-
-async def _run_slot(job_id: str, slot_index: int, tier: str) -> None:
-    template = _pick_template(slot_index)
-    prompt = _make_variation_prompt(template, slot_index, tier=tier)
-    model = FAST_IMAGE_MODEL if tier == "fast" else HQ_IMAGE_MODEL
-    async with _jobs_lock:
-        state = _pose_jobs.get(job_id)
-        reference_image_data_url = state.reference_image_data_url if state else None
-
-    try:
-        image_url = await _openrouter_generate_to_job(
-            prompt,
-            model=model,
-            job_id=job_id,
-            slot_index=slot_index,
-            reference_image_data_url=reference_image_data_url,
-        )
-    except Exception:
-        if tier == "hq":
-            fallback_tier = "fast"
-            fallback_model = FAST_IMAGE_MODEL
-            fallback_prompt = _make_variation_prompt(template, slot_index, tier="fast")
-            image_url = await _openrouter_generate_to_job(
-                fallback_prompt,
-                model=fallback_model,
-                job_id=job_id,
-                slot_index=slot_index,
-                reference_image_data_url=reference_image_data_url,
-            )
-            tier = fallback_tier
-            model = fallback_model
-        else:
-            raise
-
-    async with _jobs_lock:
-        state = _pose_jobs.get(job_id)
-        if not state:
-            return
-        result = PoseVariantResult(
-            id=f"{job_id}-{slot_index + 1:02d}",
-            slot_index=slot_index,
-            title=template.name,
-            instruction=template.description,
-            image_url=image_url,
-            pose_template_id=template.id,
-            replaceable=True,
-            tier=tier,
-            model=model,
-        )
-        state.job.results.append(result)
-        state.job.results.sort(key=lambda r: r.slot_index)
-        state.job.progress = len(state.job.results)
-        if state.job.progress >= state.job.total:
-            state.job.status = "ready"
-        else:
-            state.job.status = "generating"
-    await _push_event(job_id, "image_ready", result)
-
-
-async def _run_pose_job(job_id: str) -> None:
-    # 3 fast + 3 HQ, with small backend concurrency.
-    slot_plan = [(i, "fast") for i in range(3)] + [(i, "hq") for i in range(3, 6)]
-    semaphore = asyncio.Semaphore(3)
-
-    async def run_with_limit(slot_index: int, tier: str) -> None:
-        async with semaphore:
-            await _run_slot(job_id, slot_index, tier)
-
-    tasks = [asyncio.create_task(run_with_limit(slot_index, tier)) for slot_index, tier in slot_plan]
-    failures = 0
-    for task in tasks:
-        try:
-            await task
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Pose slot failed", exc_info=exc)
-            failures += 1
-
-    async with _jobs_lock:
-        state = _pose_jobs.get(job_id)
-        if not state:
-            return
-        if failures and state.job.progress == 0:
-            state.job.status = "failed"
-            state.job.error = "All image generations failed."
-        elif state.job.progress < state.job.total:
-            state.job.status = "ready"
-        else:
-            state.job.status = "ready"
-    await _push_event(job_id, "job_done")
-
-
 @app.post("/api/pose-variants", response_model=PoseVariantJob)
-async def create_pose_variants(reference_image: UploadFile = File(...)) -> PoseVariantJob:
-    image_bytes = await reference_image.read()
-    mime = reference_image.content_type or "image/jpeg"
-    reference_image_data_url = f"data:{mime};base64,{base64.b64encode(image_bytes).decode('ascii')}"
-    job_id = uuid4().hex
-    job = PoseVariantJob(
-        job_id=job_id,
-        status="queued",
-        progress=0,
-        total=POSE_VARIANT_TOTAL,
-        results=[],
-        error=None,
+async def create_pose_variants(
+    background_tasks: BackgroundTasks,
+    request: Request,
+    reference_image: UploadFile = File(...),
+    user_id: str = Depends(require_auth),
+) -> PoseVariantJob:
+    if not reference_image.content_type or not reference_image.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="reference_image must be an image")
+    _enforce_pose_job_limits(user_id, request)
+
+    job = await create_pose_variant_job(reference_image)
+    set_pose_variant_owner(job.job_id, user_id)
+    try:
+        spend_credits(
+            user_id,
+            amount=CONFIG.pose_variant_cost,
+            event_type="pose_variant_job",
+            event_ref=job.job_id,
+        )
+    except HTTPException:
+        cancel_pose_variant_job(job.job_id)
+        raise
+    memory = get_mubit_memory()
+    if memory:
+        order = memory.rank_pose_candidates(
+            user_id=user_id,
+            scene_tags=["camera_live", "pose_variants"],
+            candidates=[
+                {"id": "pose-01", "title": "Crossed arms", "prompt": "arms crossed"},
+                {"id": "pose-02", "title": "Relaxed turn", "prompt": "relaxed turn"},
+                {"id": "pose-03", "title": "Thoughtful", "prompt": "hand near chin"},
+                {"id": "pose-04", "title": "Look away", "prompt": "side look"},
+                {"id": "pose-05", "title": "Hands forward", "prompt": "hands forward"},
+                {"id": "pose-06", "title": "Angled cross", "prompt": "angled crossed arms"},
+                {"id": "pose-07", "title": "Hand on cheek", "prompt": "hand near cheek"},
+                {"id": "pose-08", "title": "Over shoulder", "prompt": "look over shoulder"},
+                {"id": "pose-09", "title": "Lean in", "prompt": "lean toward camera"},
+                {"id": "pose-10", "title": "Calm profile", "prompt": "calm profile"},
+            ],
+        )
+        reorder_pose_variants(order)
+        personalization = memory.get_personalization_block(
+            user_id=user_id,
+            scene_tags=["camera_live", "pose_variants"],
+        )
+        if personalization:
+            set_pose_variant_personalization(job.job_id, personalization)
+    background_tasks.add_task(
+        run_pose_variant_job,
+        job.job_id,
+        on_failed=lambda failed_job_id: credit_refund_for_failed_job(user_id, failed_job_id),
+        timeout_seconds=int(os.environ.get("POSE_VARIANT_JOB_TIMEOUT_SECONDS", "180")),
     )
-    async with _jobs_lock:
-        _pose_jobs[job_id] = PoseJobState(job=job, reference_image_data_url=reference_image_data_url)
-    asyncio.create_task(_run_pose_job(job_id))
     return job
 
 
 @app.get("/api/pose-variants/{job_id}", response_model=PoseVariantJob)
-async def get_pose_variants_job(job_id: str) -> PoseVariantJob:
-    async with _jobs_lock:
-        state = _pose_jobs.get(job_id)
-        if not state:
-            raise HTTPException(status_code=404, detail="Job not found")
-        return state.job
+def get_pose_variants(job_id: str) -> PoseVariantJob:
+    job = get_pose_variant_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="pose variant job not found")
+    return job
 
 
-@app.get("/api/pose-variants/{job_id}/events")
-async def stream_pose_variants_events(job_id: str) -> StreamingResponse:
-    async with _jobs_lock:
-        state = _pose_jobs.get(job_id)
-        if not state:
-            raise HTTPException(status_code=404, detail="Job not found")
-        initial = _event_payload("snapshot", state.job)
+@app.post("/api/memory/onboarding", response_model=MemoryStatusResponse)
+def seed_memory_onboarding(
+    payload: MemoryOnboardingRequest,
+    user_id: str = Depends(require_auth),
+) -> MemoryStatusResponse:
+    memory = get_mubit_memory()
+    if not memory:
+        return MemoryStatusResponse(ok=False)
+    memory.remember_onboarding_seed(
+        user_id=user_id,
+        entries=[entry.model_dump() for entry in payload.entries],
+    )
+    return MemoryStatusResponse(ok=True)
 
-    async def event_stream() -> AsyncIterator[str]:
-        yield initial
-        while True:
-            async with _jobs_lock:
-                state_now = _pose_jobs.get(job_id)
-                if not state_now:
-                    break
-                is_done = state_now.job.status in {"ready", "failed"}
-            if is_done and state_now and state_now.events.empty():
-                break
-            try:
-                message = await asyncio.wait_for(state_now.events.get(), timeout=12.0)
-                yield message
-            except TimeoutError:
-                yield ": keepalive\n\n"
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+@app.post("/api/memory/feedback", response_model=MemoryStatusResponse)
+def record_memory_feedback(
+    payload: MemoryFeedbackRequest,
+    user_id: str = Depends(require_auth),
+) -> MemoryStatusResponse:
+    check_rate_limit(
+        f"memory:feedback:{user_id}",
+        max_count=CONFIG.memory_writes_per_hour,
+        window_seconds=60 * 60,
+    )
+    memory = get_mubit_memory()
+    if not memory:
+        return MemoryStatusResponse(ok=False)
+    memory.remember_feedback(
+        user_id=user_id,
+        event=payload.event,
+        pose_template_id=payload.pose_template_id,
+        scene_tags=payload.scene_tags,
+        outcome_score=payload.outcome_score,
+    )
+    return MemoryStatusResponse(ok=True)
+
+
+@app.post("/api/memory/preferences", response_model=MemoryStatusResponse)
+def set_memory_preferences(
+    payload: MemoryPreferencesRequest,
+    user_id: str = Depends(require_auth),
+) -> MemoryStatusResponse:
+    check_rate_limit(
+        f"memory:preferences:{user_id}",
+        max_count=CONFIG.memory_writes_per_hour,
+        window_seconds=60 * 60,
+    )
+    memory = get_mubit_memory()
+    if not memory:
+        return MemoryStatusResponse(ok=False)
+    memory.remember_preferences(
+        user_id=user_id,
+        allow_camera_roll=payload.allow_camera_roll,
+        allow_instagram=payload.allow_instagram,
+        allow_pinterest=payload.allow_pinterest,
+    )
+    return MemoryStatusResponse(ok=True)
+
+
+@app.post("/api/memory/reset", response_model=MemoryStatusResponse)
+def reset_memory_profile(
+    payload: MemoryResetRequest,
+    user_id: str = Depends(require_auth),
+) -> MemoryStatusResponse:
+    check_rate_limit(
+        f"memory:reset:{user_id}",
+        max_count=max(CONFIG.memory_writes_per_hour // 4, 10),
+        window_seconds=60 * 60,
+    )
+    memory = get_mubit_memory()
+    if not memory:
+        return MemoryStatusResponse(ok=False)
+    memory.reset_user_memory(user_id=user_id, hard_reset=payload.hard_reset)
+    return MemoryStatusResponse(ok=True)
+
+
+@app.get("/api/billing/account", response_model=BillingAccountResponse)
+def get_billing_account(user_id: str = Depends(require_auth)) -> BillingAccountResponse:
+    return BillingAccountResponse(**get_account_state(user_id))
+
+
+@app.post("/api/billing/checkout", response_model=CheckoutResponse)
+def start_checkout(
+    payload: CheckoutRequest,
+    user_id: str = Depends(require_auth),
+) -> CheckoutResponse:
+    session = create_checkout_session(
+        user_id=user_id,
+        pack_id=payload.pack_id,
+        success_url=payload.success_url,
+        cancel_url=payload.cancel_url,
+    )
+    return CheckoutResponse(**session)
+
+
+@app.post("/api/billing/webhook")
+async def stripe_webhook(
+    request: Request,
+    stripe_signature: str | None = Header(default=None, alias="Stripe-Signature"),
+) -> dict[str, object]:
+    body = await request.body()
+    return handle_stripe_webhook(body, stripe_signature)

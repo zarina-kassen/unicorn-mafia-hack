@@ -2,11 +2,10 @@ import { useEffect, useRef } from 'react'
 
 import type { NormalizedLandmark } from '../pose/mediapipe'
 import { LM } from '../pose/mediapipe'
-import type { PoseTemplate } from '../pose/templates'
 
 interface PoseOverlayProps {
   videoRef: React.RefObject<HTMLVideoElement | null>
-  targetTemplate: PoseTemplate
+  targetLandmarks: NormalizedLandmark[]
   mirrored?: boolean
   paused?: boolean
 }
@@ -198,16 +197,16 @@ function drawHuaweiGuide(
 
 export function PoseOverlay({
   videoRef,
-  targetTemplate,
+  targetLandmarks,
   mirrored = true,
   paused = false,
 }: PoseOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const templateRef = useRef<PoseTemplate>(targetTemplate)
+  const landmarksRef = useRef<NormalizedLandmark[]>(targetLandmarks)
 
   useEffect(() => {
-    templateRef.current = targetTemplate
-  }, [targetTemplate])
+    landmarksRef.current = targetLandmarks
+  }, [targetLandmarks])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -237,7 +236,7 @@ export function PoseOverlay({
         if (!paused) {
           drawHuaweiGuide(
             ctx,
-            templateRef.current.landmarks,
+            landmarksRef.current,
             canvas.width,
             canvas.height,
             mirrored,

@@ -1,7 +1,7 @@
 import type { NormalizedLandmark } from '../pose/mediapipe'
 
 export interface GuidanceResponse {
-  recommended_template_id: string
+  recommended_target_id: string
   confidence: number
   guidance: string
   person_visible: boolean
@@ -12,8 +12,21 @@ export interface GuidanceResponse {
 
 export interface PoseContextPayload {
   landmarks: NormalizedLandmark[]
-  candidate_template_id: string
+  active_target_id: string
   local_confidence: number
   image_wh: [number, number]
   snapshot_b64?: string | null
+}
+
+export interface PoseVariantResult {
+  id: string
+  slot_index: number
+  title: string
+  instruction: string
+  image_url: string
+  target_id: string
+  target_landmarks: NormalizedLandmark[]
+  replaceable: boolean
+  tier: 'fast' | 'hq'
+  model: string
 }

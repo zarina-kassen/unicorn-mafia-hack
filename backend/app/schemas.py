@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class Landmark(BaseModel):
@@ -18,39 +18,25 @@ class Landmark(BaseModel):
     visibility: float = 0.0
 
 
-class PoseContext(BaseModel):
-    """Lightweight payload sent from the browser once per ~1.5s.
-
-    We intentionally send only landmarks + a small amount of metadata so the
-    request is cheap and the agent does not have to do real-time tracking.
-    """
-
-    landmarks: list[Landmark] = Field(default_factory=list)
-    candidate_template_id: str
-    local_confidence: float = Field(ge=0.0, le=1.0)
-    image_wh: tuple[int, int] = (0, 0)
-    snapshot_b64: str | None = None
-
-
-class GuidanceResponse(BaseModel):
-    """Structured output returned by the guidance agent."""
-
-    recommended_template_id: str
-    confidence: float = Field(ge=0.0, le=1.0)
-    guidance: str
-    person_visible: bool
-    pose_aligned: bool
-    suggest_different: bool
-    reason: str
-
-
-class TemplateMeta(BaseModel):
-    """Metadata describing a pose template that the agent may reference."""
+class PoseTarget(BaseModel):
+    """A dynamically generated pose target with landmarks and metadata."""
 
     id: str
-    name: str
-    description: str
-    posture: str  # "standing" | "seated" | "leaning"
+    title: str
+    instruction: str
+    rationale: str
+    target_landmarks: list[Landmark]
+    image_url: str | None = None
+    replaceable: bool = True
+
+
+class PoseTargetSpec(BaseModel):
+    """Specification for generating a pose target."""
+
+    title: str
+    instruction: str
+    rationale: str
+    approximate_landmarks: list[Landmark]
 
 
 class PoseVariantResult(BaseModel):
@@ -61,18 +47,8 @@ class PoseVariantResult(BaseModel):
     title: str
     instruction: str
     image_url: str
-    pose_template_id: str
+    target_id: str
+    target_landmarks: list[Landmark]
     replaceable: bool
     tier: str  # "fast" | "hq"
     model: str
-
-
-class PoseVariantJob(BaseModel):
-    """Current state of a pose-variant generation job."""
-
-    job_id: str
-    status: str  # "queued" | "generating" | "ready" | "failed"
-    progress: int
-    total: int
-    results: list[PoseVariantResult]
-    error: str | None = None

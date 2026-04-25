@@ -1,4 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Show,
+  SignInButton,
+  SignUpButton,
+  UserButton,
+} from '@clerk/react'
 
 import { useCamera } from './camera/useCamera'
 import type { NormalizedLandmark } from './pose/mediapipe'
@@ -6,14 +12,9 @@ import { usePoseLandmarker } from './pose/usePoseLandmarker'
 import { TEMPLATES, getTemplate, type PoseTemplate } from './pose/templates'
 import { matchTemplate } from './pose/matcher'
 import { PoseOverlay } from './overlay/PoseOverlay'
-import {
-  createGuidanceClient,
-  type GuidanceResponse,
-  type PoseContextPayload,
-} from './backend/client'
+import { useGuidance } from './hooks/useGuidance'
+import type { PoseContextPayload } from './api/types'
 import './App.css'
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? ''
 
 function formatConfidence(score: number): string {
   return `${Math.round(score * 100)}%`
@@ -29,7 +30,7 @@ function App() {
     score: number
     personVisible: boolean
   }>(() => ({ template: TEMPLATES[0], score: 0, personVisible: false }))
-  const [guidance, setGuidance] = useState<GuidanceResponse | null>(null)
+  const { submit: submitGuidance, guidance } = useGuidance()
 
   const landmarkerEnabled = cameraState.status === 'ready' && !paused
 
@@ -53,16 +54,6 @@ function App() {
     handleLandmarks,
   )
 
-  const clientRef = useRef(createGuidanceClient(BACKEND_URL))
-  useEffect(() => {
-    const client = clientRef.current
-    const unsubscribe = client.subscribe(setGuidance)
-    return () => {
-      unsubscribe()
-      client.stop()
-    }
-  }, [])
-
   useEffect(() => {
     if (!liveLandmarks || paused) return
     const video = videoRef.current
@@ -80,8 +71,8 @@ function App() {
       local_confidence: localMatch.score,
       image_wh: wh,
     }
-    clientRef.current.submit(payload)
-  }, [liveLandmarks, localMatch, paused])
+    submitGuidance(payload)
+  }, [liveLandmarks, localMatch, paused, submitGuidance])
 
   // If the agent suggests a different template with high confidence, prefer it.
   const targetTemplate = useMemo(() => {
@@ -103,9 +94,32 @@ function App() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <h1>frame-mog</h1>
-        <p className="subtitle">Live pose outline camera</p>
+        <div>
+          <h1>frame-mog</h1>
+          <p className="subtitle">Live pose outline camera</p>
+        </div>
+        <Show when="signed-in">
+          <UserButton />
+        </Show>
       </header>
+
+      <Show
+        when="signed-in"
+        fallback={
+          <div className="auth-gate">
+            <h2>Welcome to frame-mog</h2>
+            <p>Sign in to access the live pose outline camera.</p>
+            <div className="auth-buttons">
+              <SignInButton mode="modal">
+                <button type="button">Sign in</button>
+              </SignInButton>
+              <SignUpButton mode="modal">
+                <button type="button" className="secondary">Sign up</button>
+              </SignUpButton>
+            </div>
+          </div>
+        }
+      >
 
       <main className="stage">
         <div className="preview">
@@ -179,6 +193,8 @@ function App() {
           )}
         </aside>
       </main>
+
+      </Show>
     </div>
   )
 }

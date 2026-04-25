@@ -1,12 +1,16 @@
 """Smoke tests for the health and pose-variants endpoints."""
 
+from __future__ import annotations
+
 from collections.abc import Generator
 
 import pytest
 from fastapi.testclient import TestClient
+from openai.types.chat import ChatCompletion
 
 from app.auth.clerk import require_auth
 from app.main import app
+from app.routes.pose_variants import _extract_generated_image_url
 
 
 @pytest.fixture(autouse=True)
@@ -46,3 +50,36 @@ def test_pose_variant_rejects_non_image_upload() -> None:
         files={"reference_image": ("note.txt", b"hello", "text/plain")},
     )
     assert r.status_code == 400
+
+
+def test_openrouter_chat_image_response_parsing() -> None:
+    response = ChatCompletion.model_validate(
+        {
+            "id": "chatcmpl-test",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "black-forest-labs/flux.2-klein-4b",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "images": [
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": "data:image/png;base64,iVBORw0KGgo="
+                                },
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+    )
+
+    assert (
+        _extract_generated_image_url(response) == "data:image/png;base64,iVBORw0KGgo="
+    )

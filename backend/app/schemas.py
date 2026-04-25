@@ -67,6 +67,30 @@ class OpenRouterImage(BaseModel):
     image_url: ImageUrl
 
 
+class OpenRouterMessage(BaseModel):
+    """Assistant message from OpenRouter chat completions."""
+
+    images: list[OpenRouterImage] = Field(default_factory=list)
+
+
+class OpenRouterChoice(BaseModel):
+    """Choice from OpenRouter chat completions."""
+
+    message: OpenRouterMessage
+
+
+class OpenRouterChatResponse(BaseModel):
+    """OpenRouter chat completions response."""
+
+    choices: list[OpenRouterChoice] = Field(default_factory=list)
+
+
+class PoseMaskRequest(BaseModel):
+    """Request to extract a person mask from an image."""
+
+    image_url: str = Field(min_length=1)
+
+
 class PoseMaskResponse(BaseModel):
     """Mask image metadata returned by the LLM extraction pipeline."""
 

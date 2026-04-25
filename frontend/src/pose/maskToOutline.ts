@@ -1,5 +1,3 @@
-import { contours } from 'd3-contour'
-
 export interface NormPoint {
   x: number
   y: number
@@ -61,11 +59,7 @@ function rdpLine(points: NormPoint[], epsilon: number): NormPoint[] {
 
 function gaussianBlur3x3(values: Float32Array, width: number, height: number): Float32Array {
   const out = new Float32Array(values.length)
-  const kernel = [
-    1, 2, 1,
-    2, 4, 2,
-    1, 2, 1,
-  ]
+  const kernel = [1, 2, 1, 2, 4, 2, 1, 2, 1]
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       let weighted = 0
@@ -97,16 +91,7 @@ function keepLargestConnectedComponent(
   let label = 0
   const queueX = new Int32Array(n)
   const queueY = new Int32Array(n)
-  const neighbors = [
-    [-1, 0],
-    [1, 0],
-    [0, -1],
-    [0, 1],
-    [-1, -1],
-    [1, -1],
-    [-1, 1],
-    [1, 1],
-  ] as const
+  const neighbors = [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]] as const
 
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
@@ -229,8 +214,111 @@ function smoothClosedPath(points: NormPoint[], passes: number): NormPoint[] {
 }
 
 /**
- * Outer silhouette of a person mask: marching squares at 0.5, largest exterior ring,
- * normalized to [0,1] × [0,1] (same space as BlazePose landmarks).
+ * Pure-JS marching squares at threshold 0.5.
+ * Returns all rings (closed contours) in pixel coordinates.
+ */
+function marchingSquares(
+  grid: Float32Array,
+  width: number,
+  height: number,
+  threshold: number,
+): Array<Array<[number, number]>> {
+  // Edge tables for marching squares (16 cases)
+  // Each entry: list of [x,y] fractional edge midpoints per cell
+  // We trace contour segments cell by cell, then stitch into rings.
+
+  type Seg = [[number, number], [number, number]]
+  const segments: Seg[] = []
+
+  const at = (x: number, y: number): number => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return 0
+    return grid[y * width + x]
+  }
+
+  for (let y = 0; y < height - 1; y += 1) {
+    for (let x = 0; x < width - 1; x += 1) {
+      const tl = at(x, y) >= threshold ? 1 : 0
+      const tr = at(x + 1, y) >= threshold ? 1 : 0
+      const br = at(x + 1, y + 1) >= threshold ? 1 : 0
+      const bl = at(x, y + 1) >= threshold ? 1 : 0
+      const idx = (tl << 3) | (tr << 2) | (br << 1) | bl
+
+      // Edge midpoints (fractional pixel coords)
+      const top: [number, number] = [x + 0.5, y]
+      const right: [number, number] = [x + 1, y + 0.5]
+      const bottom: [number, number] = [x + 0.5, y + 1]
+      const left: [number, number] = [x, y + 0.5]
+
+      switch (idx) {
+        case 1:  segments.push([bottom, left]); break
+        case 2:  segments.push([right, bottom]); break
+        case 3:  segments.push([right, left]); break
+        case 4:  segments.push([top, right]); break
+        case 5:  segments.push([top, right]); segments.push([bottom, left]); break
+        case 6:  segments.push([top, bottom]); break
+        case 7:  segments.push([top, left]); break
+        case 8:  segments.push([left, top]); break
+        case 9:  segments.push([bottom, top]); break
+        case 10: segments.push([left, bottom]); segments.push([top, right]); break
+        case 11: segments.push([right, top]); break  // fixed: was [bottom, top] duplicate
+        case 12: segments.push([left, right]); break
+        case 13: segments.push([bottom, right]); break
+        case 14: segments.push([left, bottom]); break
+        default: break // 0 and 15: no contour
+      }
+    }
+  }
+
+  if (segments.length === 0) return []
+
+  // Stitch segments into rings using a point map
+  // Key: "x,y" rounded to 1 decimal
+  const key = (p: [number, number]) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`
+
+  // Build adjacency: each endpoint maps to segments that touch it
+  const adj = new Map<string, Array<{ seg: Seg; used: boolean }>>()
+  const segObjs = segments.map((seg) => ({ seg, used: false }))
+
+  for (const obj of segObjs) {
+    const k0 = key(obj.seg[0])
+    const k1 = key(obj.seg[1])
+    if (!adj.has(k0)) adj.set(k0, [])
+    if (!adj.has(k1)) adj.set(k1, [])
+    adj.get(k0)!.push(obj)
+    adj.get(k1)!.push(obj)
+  }
+
+  const rings: Array<Array<[number, number]>> = []
+
+  for (const startObj of segObjs) {
+    if (startObj.used) continue
+    startObj.used = true
+    const ring: Array<[number, number]> = [startObj.seg[0], startObj.seg[1]]
+    let current = startObj.seg[1]
+
+    for (;;) {
+      const neighbors = adj.get(key(current)) ?? []
+      const next = neighbors.find((o) => !o.used)
+      if (!next) break
+      next.used = true
+      const other = key(next.seg[0]) === key(current) ? next.seg[1] : next.seg[0]
+      if (key(other) === key(ring[0])) {
+        ring.push(ring[0])
+        break
+      }
+      ring.push(other)
+      current = other
+    }
+
+    if (ring.length >= 4) rings.push(ring)
+  }
+
+  return rings
+}
+
+/**
+ * Outer silhouette of a person mask: pure-JS marching squares at 0.5,
+ * largest exterior ring, normalized to [0,1] × [0,1].
  */
 export function outlineFromPersonMaskGrid(
   values: Float32Array,
@@ -240,26 +328,19 @@ export function outlineFromPersonMaskGrid(
   if (width < 2 || height < 2 || values.length !== width * height) return null
 
   const blurred = gaussianBlur3x3(values, width, height)
-  const refinedMask = keepLargestConnectedComponent(blurred, width, height, 0.38)
+  const refined = keepLargestConnectedComponent(blurred, width, height, 0.38)
 
-  const contour = contours()
-    .size([width, height])
-    .smooth(true)
-    .thresholds([0.5])
+  const rings = marchingSquares(refined, width, height, 0.5)
+  if (rings.length === 0) return null
 
-  const layers = contour(refinedMask)
-  const layer = layers[0]
-  if (!layer?.coordinates?.length) return null
-
-  let best: [number, number][] | null = null
+  // Pick ring with largest area
+  let best: Array<[number, number]> | null = null
   let bestArea = 0
-  for (const polygon of layer.coordinates) {
-    const outer = polygon[0]
-    if (!outer || outer.length < 3) continue
-    const a = polygonArea(outer)
+  for (const ring of rings) {
+    const a = polygonArea(ring)
     if (a > bestArea) {
       bestArea = a
-      best = outer as [number, number][]
+      best = ring
     }
   }
   if (!best || bestArea < width * height * 0.0005) return null

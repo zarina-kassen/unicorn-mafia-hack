@@ -28,13 +28,19 @@ class Settings(BaseSettings):
         description="OpenRouter base URL",
     )
 
+    # OpenAI Configuration
+    openai_api_key: str = Field(
+        default="",
+        description="OpenAI API key",
+    )
+
     # AI Model Configuration
     agent_model: str = Field(
         default="openai/gpt-4.1-mini",
         description="Model for pose generation agent",
     )
     image_model: str = Field(
-        default="openai/gpt-5.4-image-2",
+        default="black-forest-labs/flux.2-pro",
         description="Image generation model",
     )
 

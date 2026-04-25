@@ -6,179 +6,48 @@ import {
   useRef,
   useState,
 } from 'react'
-import { useAuth } from '@clerk/react'
 
-import { useCamera } from './camera/useCamera'
-import { usePoseLandmarker } from './pose/usePoseLandmarker'
-import { PoseOverlay } from './overlay/PoseOverlay'
-import { extractPoseGuideFromGeneratedImage } from './pose/extractPoseFromImage'
-import { GALLERY_POSES, type GalleryPose } from './pose/galleryTargets'
-import { getTemplate } from './pose/templates'
-import {
-  createPoseVariantJob,
-  type PoseVariantResult,
-  subscribePoseVariantJob,
-  uploadOnboardingGalleryImages,
-} from './backend/client'
+import { useCamera } from './hooks/useCamera'
 import { usePoseVariants } from './hooks/usePoseVariants'
+import { usePoseMask } from './hooks/usePoseMask'
+import { useOnboarding } from './hooks/useOnboarding'
+import { PoseOverlay } from './components/PoseOverlay'
 import { Button } from '@/components/ui/button'
 import './App.css'
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? ''
-const ONBOARDING_STORAGE_KEY = 'frame-mog-onboarding-gallery-v1'
-
-/** Visible strip when the pose gallery sheet is collapsed (px). */
 const GALLERY_SHEET_PEEK_PX = 80
 
-type GenerationStatus = 'idle' | 'capturing' | 'generating' | 'ready' | 'failed'
-
-function captureVideoFrame(video: HTMLVideoElement): Promise<Blob> {
-  if (!video.videoWidth || !video.videoHeight) {
-    return Promise.reject(new Error('Camera frame is not ready yet.'))
-  }
-
-  const canvas = document.createElement('canvas')
-  canvas.width = video.videoWidth
-  canvas.height = video.videoHeight
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return Promise.reject(new Error('Could not capture camera frame.'))
-
-  ctx.translate(canvas.width, 0)
-  ctx.scale(-1, 1)
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => {
-        if (blob) resolve(blob)
-        else reject(new Error('Could not encode camera frame.'))
-      },
-      'image/jpeg',
-      0.92,
-    )
-  })
-}
-
-function backendAssetUrl(path: string): string {
-  if (/^https?:\/\//.test(path)) return path
-  return `${BACKEND_URL}${path}`
-}
-
-function galleryPoseFromResult(result: PoseVariantResult): GalleryPose {
-  const galleryMatch = GALLERY_POSES.find((pose) => pose.id === result.pose_template_id)
-  const template = galleryMatch?.template ?? getTemplate(result.pose_template_id)
-
-  return {
-    id: result.id,
-    title: result.title,
-    instruction: result.instruction,
-    imageSrc: backendAssetUrl(result.image_url),
-    replaceableAsset: result.replaceable,
-    template,
-  }
-}
-
 function App() {
-  const { getToken } = useAuth()
   const videoRef = useRef<HTMLVideoElement>(null)
   const { state: cameraState, request: requestCamera } = useCamera(videoRef)
-  const [galleryPoses, setGalleryPoses] = useState<GalleryPose[]>([])
-  /** LLM-provided person mask image for each generated pose id. */
-  const [photoMaskById, setPhotoMaskById] = useState<Record<string, string>>({})
-  /** Explicit per-pose extraction failure details from strict LLM-only path. */
-  const [maskErrorById, setMaskErrorById] = useState<Record<string, string>>({})
-  const outlineExtractionStartedRef = useRef(new Set<string>())
-  const [selectedPoseId, setSelectedPoseId] = useState<string | null>(null)
-  const [generationStatus, setGenerationStatus] = useState<GenerationStatus>('idle')
-  const [generationJobId, setGenerationJobId] = useState<string | null>(null)
-  const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 6 })
-  const [generationError, setGenerationError] = useState<string | null>(null)
-  const [onboardingDone, setOnboardingDone] = useState(false)
-  const [onboardingFiles, setOnboardingFiles] = useState<File[]>([])
-  const [onboardingBusy, setOnboardingBusy] = useState(false)
-  const [onboardingError, setOnboardingError] = useState<string | null>(null)
-  const [allowGalleryLearning, setAllowGalleryLearning] = useState(true)
+
+  const poseVariants = usePoseVariants()
+  const { done: onboardingDone, files, setFiles, allowLearning, setAllowLearning, skip: skipOnboarding, mutation: onboardingMutation } = useOnboarding()
+
+  const poses = useMemo(() => poseVariants.data ?? [], [poseVariants.data])
+  const { maskUrls } = usePoseMask(poses)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const activeId = poseVariants.isPending ? null : (selectedId ?? poses[0]?.id ?? null)
+  const selectedPose = useMemo(() => poses.find((p) => p.id === activeId) ?? null, [poses, activeId])
+
+  const galleryBusy = poseVariants.isPending
+  const galleryVisible = cameraState.status === 'ready' && (galleryBusy || poses.length > 0 || poseVariants.isError)
 
   const gallerySheetRef = useRef<HTMLElement>(null)
   const galleryMaxYRef = useRef(0)
   const gallerySheetYRef = useRef(0)
-  const galleryDragRef = useRef<{
-    pointerId: number
-    startClientY: number
-    startTranslate: number
-  } | null>(null)
+  const galleryDragRef = useRef<{ pointerId: number; startClientY: number; startTranslate: number } | null>(null)
   const [gallerySheetY, setGallerySheetY] = useState(0)
   const [gallerySheetMaxY, setGallerySheetMaxY] = useState(0)
   const [gallerySheetDragging, setGallerySheetDragging] = useState(false)
   const [shutterFlashActive, setShutterFlashActive] = useState(false)
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const alreadyDone = window.localStorage.getItem(ONBOARDING_STORAGE_KEY) === 'done'
-    setOnboardingDone(alreadyDone)
-  }, [])
-
-  useEffect(() => {
-    gallerySheetYRef.current = gallerySheetY
-  }, [gallerySheetY])
-
-  const galleryPosesRef = useRef<GalleryPose[]>([])
-  useEffect(() => {
-    galleryPosesRef.current = galleryPoses
-  }, [galleryPoses])
-
-  const finishOnboarding = useCallback(() => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(ONBOARDING_STORAGE_KEY, 'done')
-    }
-    setOnboardingDone(true)
-  }, [])
-
-  const handleOnboardingFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const next = Array.from(event.target.files ?? []).slice(0, 5)
-    setOnboardingFiles(next)
-    setOnboardingError(null)
-  }, [])
-
-  const handleOnboardingSubmit = useCallback(async () => {
-    if (onboardingFiles.length === 0 || onboardingBusy || !allowGalleryLearning) return
-    setOnboardingBusy(true)
-    setOnboardingError(null)
-    try {
-      const result = await uploadOnboardingGalleryImages(onboardingFiles, BACKEND_URL, getToken, {
-        allowCameraRoll: allowGalleryLearning,
-      })
-      if (!result.ok) {
-        setOnboardingError(result.message)
-        return
-      }
-      finishOnboarding()
-    } catch (err) {
-      setOnboardingError(err instanceof Error ? err.message : 'Onboarding upload failed.')
-    } finally {
-      setOnboardingBusy(false)
-    }
-  }, [allowGalleryLearning, finishOnboarding, getToken, onboardingBusy, onboardingFiles])
-
-  const selectedPose = useMemo((): GalleryPose | null => {
-    if (!selectedPoseId) return null
-    return galleryPoses.find((pose) => pose.id === selectedPoseId) ?? null
-  }, [galleryPoses, selectedPoseId])
-
-  const galleryBusy = generationStatus === 'capturing' || generationStatus === 'generating'
-  const hasGeneratedGallery = generationStatus === 'ready'
-  /** Outline only for the pose the user explicitly picked in the gallery. */
-  const showPoseGuide = selectedPose !== null
-
-  const galleryVisible =
-    cameraState.status === 'ready' &&
-    (galleryBusy || galleryPoses.length > 0 || generationError)
+  useEffect(() => { gallerySheetYRef.current = gallerySheetY }, [gallerySheetY])
 
   const measureGallerySheet = useCallback(() => {
     const el = gallerySheetRef.current
     if (!el) return
-    const h = el.getBoundingClientRect().height
-    const maxY = Math.max(0, h - GALLERY_SHEET_PEEK_PX)
+    const maxY = Math.max(0, el.getBoundingClientRect().height - GALLERY_SHEET_PEEK_PX)
     galleryMaxYRef.current = maxY
     setGallerySheetMaxY(maxY)
     setGallerySheetY((y) => (maxY > 0 ? Math.min(y, maxY) : 0))
@@ -186,9 +55,8 @@ function App() {
 
   useLayoutEffect(() => {
     if (!galleryVisible) {
-      setGallerySheetY(0)
       galleryMaxYRef.current = 0
-      setGallerySheetMaxY(0)
+      window.requestAnimationFrame(() => { setGallerySheetY(0); setGallerySheetMaxY(0) })
       return
     }
     measureGallerySheet()
@@ -197,222 +65,76 @@ function App() {
     const ro = new ResizeObserver(() => measureGallerySheet())
     ro.observe(el)
     return () => ro.disconnect()
-  }, [galleryVisible, measureGallerySheet, galleryPoses.length, galleryBusy, generationError])
+  }, [galleryVisible, measureGallerySheet, poses.length, galleryBusy, poseVariants.isError])
 
-  const handleGeneratePoses = useCallback(async () => {
+  const handleGenerate = useCallback(() => {
     if (cameraState.status !== 'ready' || !videoRef.current || galleryBusy) return
-
-    setGenerationStatus('capturing')
-    setGenerationError(null)
-    setGenerationProgress({ current: 0, total: 6 })
-    setGalleryPoses([])
-    outlineExtractionStartedRef.current.clear()
-    setPhotoMaskById({})
-    setMaskErrorById({})
-    setSelectedPoseId(null)
-
-    try {
-      const frame = await captureVideoFrame(videoRef.current)
-      const job = await createPoseVariantJob(frame, BACKEND_URL)
-      setGenerationJobId(job.job_id)
-      setGenerationProgress({ current: job.progress, total: job.total })
-      setGenerationStatus('generating')
-    } catch (err) {
-      setGalleryPoses([])
-      outlineExtractionStartedRef.current.clear()
-      setPhotoMaskById({})
-      setMaskErrorById({})
-      setSelectedPoseId(null)
-      setGenerationJobId(null)
-      setGenerationStatus('failed')
-      setGenerationError(err instanceof Error ? err.message : String(err))
-    }
-  }, [cameraState.status, galleryBusy])
+    poseVariants.mutate(videoRef.current)
+  }, [cameraState.status, galleryBusy, poseVariants])
 
   const onShutterClick = useCallback(() => {
     if (cameraState.status !== 'ready' || !videoRef.current || galleryBusy) return
-    if (
-      typeof window !== 'undefined' &&
-      !window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    ) {
-      setShutterFlashActive(true)
-    }
-    void handleGeneratePoses()
-  }, [cameraState.status, galleryBusy, handleGeneratePoses])
-
-  const onShutterFlashAnimationEnd = useCallback((event: React.AnimationEvent<HTMLDivElement>) => {
-    if (event.target !== event.currentTarget) return
-    setShutterFlashActive(false)
-  }, [])
-
-  useEffect(() => {
-    if (!generationJobId || generationStatus !== 'generating') return
-
-    const unsubscribe = subscribePoseVariantJob(
-      generationJobId,
-      (event) => {
-        try {
-          setGenerationProgress({ current: event.job.progress, total: event.job.total })
-
-          if (event.job.results.length > 0) {
-            const generated = event.job.results.map(galleryPoseFromResult)
-            setGalleryPoses(generated)
-            setSelectedPoseId((previous) =>
-              previous !== null && generated.some((pose) => pose.id === previous)
-                ? previous
-                : null,
-            )
-          }
-
-          if (event.job.status === 'ready') {
-            setGenerationStatus('ready')
-            setGenerationJobId(null)
-            return
-          }
-
-          if (event.job.status === 'failed') {
-            setGalleryPoses([])
-            outlineExtractionStartedRef.current.clear()
-            setPhotoMaskById({})
-            setMaskErrorById({})
-            setSelectedPoseId(null)
-            setGenerationStatus('failed')
-            setGenerationJobId(null)
-            setGenerationError(event.job.error ?? 'Pose generation failed.')
-          }
-        } catch (err) {
-          console.error('[pose variants] event handler', err)
-          setGenerationStatus('failed')
-          setGenerationJobId(null)
-          setGenerationError(err instanceof Error ? err.message : 'Could not update gallery.')
-        }
-      },
-      () => {
-        setGenerationJobId(null)
-        const poses = galleryPosesRef.current
-        if (poses.length > 0) {
-          setGenerationStatus('ready')
-          setGenerationError(
-            'Live connection dropped, but your photos below are still available. Tap Regenerate anytime to run again.',
-          )
-          return
-        }
-        setGalleryPoses([])
-        outlineExtractionStartedRef.current.clear()
-        setPhotoMaskById({})
-        setMaskErrorById({})
-        setSelectedPoseId(null)
-        setGenerationStatus('failed')
-        setGenerationError(
-          'Live updates disconnected before any photos arrived. Check your connection and tap Generate.',
-        )
-      },
-      BACKEND_URL,
-    )
-    return () => unsubscribe()
-  }, [generationJobId, generationStatus])
-
-  useEffect(() => {
-    for (const pose of galleryPoses) {
-      if (outlineExtractionStartedRef.current.has(pose.id)) continue
-      outlineExtractionStartedRef.current.add(pose.id)
-      void extractPoseGuideFromGeneratedImage(pose.imageSrc).then(
-        ({ photoMaskUrl, error }) => {
-          if (photoMaskUrl) {
-            setPhotoMaskById((prev) => ({ ...prev, [pose.id]: photoMaskUrl }))
-            setMaskErrorById((prev) => {
-              const next = { ...prev }
-              delete next[pose.id]
-              return next
-            })
-          } else if (error) {
-            setMaskErrorById((prev) => ({ ...prev, [pose.id]: error }))
-          }
-        },
-      )
-    }
-  }, [galleryPoses])
-
-  const launchMessage =
-    cameraState.status === 'idle'
-      ? 'Allow camera access to place a white pose guide over your live preview.'
-      : cameraState.status === 'requesting'
-        ? 'Opening camera...'
-        : cameraState.status === 'denied' ||
-            cameraState.status === 'unavailable' ||
-            cameraState.status === 'error'
-          ? cameraState.message
-          : ''
-
-  const generationCopy =
-    generationStatus === 'capturing'
-      ? 'Capturing'
-      : generationStatus === 'generating'
-        ? 'Generating…'
-        : hasGeneratedGallery
-          ? 'Regenerate'
-          : 'Generate'
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) setShutterFlashActive(true)
+    handleGenerate()
+  }, [cameraState.status, galleryBusy, handleGenerate])
 
   const collapseGallerySheet = useCallback(() => {
     const maxY = galleryMaxYRef.current
     if (maxY > 0) setGallerySheetY(maxY)
   }, [])
 
-  const onGallerySheetPointerDown = useCallback((event: React.PointerEvent) => {
+  const onPointerDown = useCallback((event: React.PointerEvent) => {
     if (event.button !== 0) return
-    galleryDragRef.current = {
-      pointerId: event.pointerId,
-      startClientY: event.clientY,
-      startTranslate: gallerySheetYRef.current,
-    }
+    galleryDragRef.current = { pointerId: event.pointerId, startClientY: event.clientY, startTranslate: gallerySheetYRef.current }
     setGallerySheetDragging(true)
     event.currentTarget.setPointerCapture(event.pointerId)
   }, [])
 
-  const onGallerySheetPointerMove = useCallback((event: React.PointerEvent) => {
+  const onPointerMove = useCallback((event: React.PointerEvent) => {
     const drag = galleryDragRef.current
     if (!drag || event.pointerId !== drag.pointerId) return
     const maxY = galleryMaxYRef.current
     if (maxY <= 0) return
-    const dy = event.clientY - drag.startClientY
-    const next = Math.min(Math.max(0, drag.startTranslate + dy), maxY)
-    setGallerySheetY(next)
+    setGallerySheetY(Math.min(Math.max(0, drag.startTranslate + event.clientY - drag.startClientY), maxY))
   }, [])
 
-  const onGallerySheetPointerUp = useCallback((event: React.PointerEvent) => {
+  const onPointerUp = useCallback((event: React.PointerEvent) => {
     const drag = galleryDragRef.current
     if (!drag || event.pointerId !== drag.pointerId) return
     const totalDy = event.clientY - drag.startClientY
     galleryDragRef.current = null
     setGallerySheetDragging(false)
-    try {
-      event.currentTarget.releasePointerCapture(event.pointerId)
-    } catch {
-      // ignore if already released
-    }
-
+    try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* already released */ }
     setGallerySheetY((prev) => {
       const maxY = galleryMaxYRef.current
       if (maxY <= 0) return 0
-      if (Math.abs(totalDy) < 10) {
-        if (prev > maxY * 0.88) return 0
-        return prev
-      }
+      if (Math.abs(totalDy) < 10) return prev > maxY * 0.88 ? 0 : prev
       return prev > maxY / 2 ? maxY : 0
     })
   }, [])
 
-  const onGallerySheetPointerCancel = useCallback((event: React.PointerEvent) => {
+  const onPointerCancel = useCallback((event: React.PointerEvent) => {
     const drag = galleryDragRef.current
     if (!drag || event.pointerId !== drag.pointerId) return
     galleryDragRef.current = null
     setGallerySheetDragging(false)
     setGallerySheetY((prev) => {
       const maxY = galleryMaxYRef.current
-      if (maxY <= 0) return 0
-      return prev > maxY / 2 ? maxY : 0
+      return maxY <= 0 ? 0 : prev > maxY / 2 ? maxY : 0
     })
   }, [])
+
+  const generationCopy =
+    poseVariants.isPending ? 'Generating…'
+    : poseVariants.isSuccess ? 'Regenerate'
+    : 'Generate'
+
+  const launchMessage =
+    cameraState.status === 'idle' ? 'Allow camera access to get started.'
+    : cameraState.status === 'requesting' ? 'Opening camera...'
+    : (cameraState.status === 'denied' || cameraState.status === 'unavailable' || cameraState.status === 'error')
+      ? cameraState.message
+      : ''
 
   if (!onboardingDone) {
     return (
@@ -423,41 +145,40 @@ function App() {
               <div className="launch-mark" aria-hidden="true" />
               <p className="launch-kicker">Taste onboarding</p>
               <h1>Pick up to 5 gallery photos.</h1>
-              <p>
-                We use your selected images to learn your style and improve generated pose prompts
-                for this account.
-              </p>
+              <p>We use your selected images to learn your style and improve generated pose prompts for this account.</p>
               <input
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
                 multiple
-                onChange={handleOnboardingFileChange}
-                disabled={onboardingBusy}
+                onChange={(e) => setFiles(Array.from(e.target.files ?? []).slice(0, 5))}
+                disabled={onboardingMutation.isPending}
               />
-              <p>{onboardingFiles.length}/5 selected</p>
+              <p>{files.length}/5 selected</p>
               <label className="mt-2 flex max-w-[min(340px,92vw)] cursor-pointer items-start gap-2 text-left text-[0.9rem] leading-snug text-cam-ink-muted">
                 <input
                   type="checkbox"
                   className="mt-1 shrink-0"
-                  checked={allowGalleryLearning}
-                  onChange={(event) => setAllowGalleryLearning(event.target.checked)}
-                  disabled={onboardingBusy}
+                  checked={allowLearning}
+                  onChange={(e) => setAllowLearning(e.target.checked)}
+                  disabled={onboardingMutation.isPending}
                 />
-                <span>
-                  Allow using my selected photos to learn my style for pose suggestions (uploaded to
-                  the server for analysis).
-                </span>
+                <span>Allow using my selected photos to learn my style for pose suggestions (uploaded to the server for analysis).</span>
               </label>
-              {onboardingError && <p className="error">{onboardingError}</p>}
+              {onboardingMutation.isError && (
+                <p className="error">{onboardingMutation.error instanceof Error ? onboardingMutation.error.message : 'Upload failed.'}</p>
+              )}
+              {onboardingMutation.isSuccess && !onboardingMutation.data.ok && (
+                <p className="error">{onboardingMutation.data.message}</p>
+              )}
               <div className="flex gap-2">
                 <Button
                   type="button"
-                  onClick={() => void handleOnboardingSubmit()}
-                  disabled={onboardingBusy || onboardingFiles.length === 0 || !allowGalleryLearning}
+                  onClick={() => onboardingMutation.mutate()}
+                  disabled={onboardingMutation.isPending || files.length === 0 || !allowLearning}
                 >
-                  {onboardingBusy ? 'Uploading...' : 'Use selected photos'}
+                  {onboardingMutation.isPending ? 'Uploading...' : 'Use selected photos'}
                 </Button>
-                <Button type="button" variant="outline" onClick={finishOnboarding} disabled={onboardingBusy}>
+                <Button type="button" variant="outline" onClick={skipOnboarding} disabled={onboardingMutation.isPending}>
                   Skip for now
                 </Button>
               </div>
@@ -479,11 +200,11 @@ function App() {
             muted
           />
 
-          {cameraState.status === 'ready' && showPoseGuide && (
+          {cameraState.status === 'ready' && selectedPose && (
             <PoseOverlay
               key={selectedPose.id}
               videoRef={videoRef}
-              photoMaskUrl={photoMaskById[selectedPose.id] ?? null}
+              photoMaskUrl={maskUrls[selectedPose.id] ?? null}
             />
           )}
 
@@ -491,148 +212,62 @@ function App() {
 
           {cameraState.status === 'ready' && (
             <>
-              <div
-                className="camera-top-bar"
-                style={{ textShadow: 'var(--shadow-cam-text)' }}
-                aria-live="polite"
-              >
-                <button
-                  className="generate-button"
-                  type="button"
-                  onClick={() => void handleGeneratePoses()}
-                  disabled={galleryBusy}
-                >
+              <div className="camera-top-bar" style={{ textShadow: 'var(--shadow-cam-text)' }} aria-live="polite">
+                <button className="generate-button" type="button" onClick={handleGenerate} disabled={galleryBusy}>
                   {generationCopy}
                 </button>
               </div>
 
-              <div className="camera-bottom-hint" aria-live="polite">
-                <span>
-                  {selectedPose?.instruction ??
-                    (galleryPoses.length > 0
-                      ? 'Tap a pose in the gallery to request its LLM mask guide.'
-                      : 'Generate poses, then choose one to match.')}
-                </span>
-              </div>
-
-              <button
-                className="shutter-button"
-                type="button"
-                onClick={() => void onShutterClick()}
-                disabled={galleryBusy}
-                aria-label={generationCopy}
-              >
+              <button className="shutter-button" type="button" onClick={onShutterClick} disabled={galleryBusy} aria-label={generationCopy}>
                 <span />
               </button>
 
               <div
-                className={
-                  shutterFlashActive ? 'shutter-flash-overlay is-active' : 'shutter-flash-overlay'
-                }
+                className={shutterFlashActive ? 'shutter-flash-overlay is-active' : 'shutter-flash-overlay'}
                 aria-hidden
-                onAnimationEnd={onShutterFlashAnimationEnd}
+                onAnimationEnd={(e) => { if (e.target === e.currentTarget) setShutterFlashActive(false) }}
               />
 
               {galleryVisible && (
                 <section
                   ref={gallerySheetRef}
-                  className={
-                    gallerySheetDragging ? 'pose-gallery is-dragging' : 'pose-gallery'
-                  }
+                  className={gallerySheetDragging ? 'pose-gallery is-dragging' : 'pose-gallery'}
                   aria-label="Generated pose gallery"
                   style={{ transform: `translateY(${gallerySheetY}px)` }}
-                  aria-expanded={
-                    gallerySheetMaxY <= 0 ? true : gallerySheetY < gallerySheetMaxY * 0.5
-                  }
+                  aria-expanded={gallerySheetMaxY <= 0 ? true : gallerySheetY < gallerySheetMaxY * 0.5}
                 >
-                  <div
-                    className="gallery-sheet-chrome"
-                    onPointerDown={onGallerySheetPointerDown}
-                    onPointerMove={onGallerySheetPointerMove}
-                    onPointerUp={onGallerySheetPointerUp}
-                    onPointerCancel={onGallerySheetPointerCancel}
-                  >
+                  <div className="gallery-sheet-chrome" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerCancel}>
                     <div className="gallery-sheet-handle" aria-hidden="true" />
                     <div className="gallery-heading">
-                      <button
-                        className="gallery-nav"
-                        type="button"
-                        aria-label="Previous pose"
-                        onPointerDown={(e) => e.stopPropagation()}
-                      >
-                        ‹
-                      </button>
+                      <button className="gallery-nav" type="button" aria-label="Previous pose" onPointerDown={(e) => e.stopPropagation()}>‹</button>
                       <div>
                         <p>{galleryBusy ? 'AI POSE RECOMMENDATIONS' : 'POSE RECOMMENDATIONS'}</p>
-                        <h2>
-                          {galleryBusy
-                            ? 'Generating…'
-                            : selectedPose?.title ?? 'Choose a pose'}
-                        </h2>
+                        <h2>{galleryBusy ? 'Generating…' : selectedPose?.title ?? 'Choose a pose'}</h2>
                       </div>
-                      <button
-                        className="gallery-nav"
-                        type="button"
-                        aria-label="Collapse pose gallery"
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={collapseGallerySheet}
-                      >
-                        ✕
-                      </button>
+                      <button className="gallery-nav" type="button" aria-label="Collapse pose gallery" onPointerDown={(e) => e.stopPropagation()} onClick={collapseGallerySheet}>✕</button>
                     </div>
-                    {(generationError || (selectedPoseId && maskErrorById[selectedPoseId])) && (
-                      <p className="gallery-error">
-                        {selectedPoseId && maskErrorById[selectedPoseId]
-                          ? maskErrorById[selectedPoseId]
-                          : generationError}
-                      </p>
+                    {poseVariants.isError && (
+                      <p className="gallery-error">{poseVariants.error instanceof Error ? poseVariants.error.message : 'Generation failed.'}</p>
                     )}
                   </div>
 
                   <div className="gallery-rail">
                     <div className="gallery-track">
-                      {galleryBusy &&
-                        galleryPoses.map((pose) => {
-                          const active = pose.id === selectedPoseId
-                          return (
-                            <button
-                              className={active ? 'pose-card active' : 'pose-card'}
-                              type="button"
-                              key={pose.id}
-                              onClick={() => setSelectedPoseId(pose.id)}
-                              aria-pressed={active}
-                            >
-                              <img src={pose.imageSrc} alt={pose.title} />
-                              <span>{pose.title}</span>
-                            </button>
-                          )
-                        })}
-
-                      {galleryBusy &&
-                        Array.from({
-                          length: Math.max(0, generationProgress.total - galleryPoses.length),
-                        }).map((_, index) => (
-                          <div className="pose-card skeleton" key={`sk-${index}`}>
-                            <span />
-                          </div>
-                        ))}
-
-                      {!galleryBusy &&
-                        galleryPoses.map((pose) => {
-                          const active = pose.id === selectedPoseId
-                          return (
-                            <button
-                              className={active ? 'pose-card active' : 'pose-card'}
-                              type="button"
-                              key={pose.id}
-                              onClick={() => setSelectedPoseId(pose.id)}
-                              aria-pressed={active}
-                            >
-                              <img src={pose.imageSrc} alt={pose.title} />
-                              <span>{pose.title}</span>
-                            </button>
-                          )
-                        })}
+                      {galleryBusy && Array.from({ length: 6 }).map((_, i) => (
+                        <div className="pose-card skeleton" key={`sk-${i}`}><span /></div>
+                      ))}
+                      {!galleryBusy && poses.map((pose) => (
+                        <button
+                          className={pose.id === activeId ? 'pose-card active' : 'pose-card'}
+                          type="button"
+                          key={pose.id}
+                          onClick={() => setSelectedId(pose.id)}
+                          aria-pressed={pose.id === activeId}
+                        >
+                          <img src={pose.imageSrc} alt={pose.title} />
+                          <span>{pose.title}</span>
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </section>
@@ -645,25 +280,18 @@ function App() {
               <div className="launch-mark" aria-hidden="true" />
               <p className="launch-kicker">Mobile pose camera</p>
               <h1>Line up before the shot.</h1>
-              <p
-                className={
-                  cameraState.status === 'idle' || cameraState.status === 'requesting'
-                    ? ''
-                    : 'error'
-                }
-              >
+              <p className={cameraState.status === 'idle' || cameraState.status === 'requesting' ? '' : 'error'}>
                 {launchMessage}
               </p>
-              {cameraState.status !== 'requesting' &&
-                cameraState.status !== 'unavailable' && (
-                  <Button
-                    variant="outline"
-                    className="camera-launch-btn mt-1.5 h-auto min-w-[178px] rounded-full border-cam-active-border bg-cam-button-face dark:bg-cam-button-face px-5 py-3.5 font-black text-cam-inverse dark:text-cam-inverse hover:bg-cam-button-face/90 hover:text-cam-inverse dark:hover:bg-cam-button-face/90 dark:hover:text-cam-inverse shadow-[var(--shadow-cam-launch-btn)]"
-                    onClick={() => void requestCamera()}
-                  >
-                    {cameraState.status === 'idle' ? 'Enable camera' : 'Retry camera'}
-                  </Button>
-                )}
+              {cameraState.status !== 'requesting' && cameraState.status !== 'unavailable' && (
+                <Button
+                  variant="outline"
+                  className="camera-launch-btn mt-1.5 h-auto min-w-[178px] rounded-full border-cam-active-border bg-cam-button-face dark:bg-cam-button-face px-5 py-3.5 font-black text-cam-inverse dark:text-cam-inverse hover:bg-cam-button-face/90 hover:text-cam-inverse dark:hover:bg-cam-button-face/90 dark:hover:text-cam-inverse shadow-[var(--shadow-cam-launch-btn)]"
+                  onClick={() => void requestCamera()}
+                >
+                  {cameraState.status === 'idle' ? 'Enable camera' : 'Retry camera'}
+                </Button>
+              )}
             </div>
           )}
         </section>

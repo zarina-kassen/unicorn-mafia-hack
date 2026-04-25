@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-app = FastAPI(title="unicorn-mafia-hack-backend")
+app = FastAPI(title="frame-mog")
 
 
 @app.get("/health")

@@ -1,4 +1,4 @@
-## Backend (uv + FastAPI)
+## frame-mog — backend (uv + FastAPI)
 
 ### Install dependencies
 

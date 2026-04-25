@@ -85,11 +85,11 @@ async def _generate_and_store_image(
         # Extract image from response - OpenRouter returns images in message.images
         message = response.choices[0].message
         if response.choices and hasattr(message, "images") and message.images:  # type: ignore[attr-defined]
-            images: list = cast(list, message.images)  # type: ignore[attr-defined]
-            if images:
+            images_data = message.images  # type: ignore[attr-defined]
+            if images_data:
                 try:
                     # Validate response structure using Pydantic model
-                    first_image = OpenRouterImage.model_validate(images[0])
+                    first_image = OpenRouterImage.model_validate(images_data[0])
                     image_data_url = first_image.image_url.url
                 except Exception as exc:
                     logger.warning("Image generation failed for slot %d: Invalid image format: %s", slot_index, exc)

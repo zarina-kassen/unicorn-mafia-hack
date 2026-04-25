@@ -1,14 +1,10 @@
-import { ApiClient, type GetToken } from './client'
+import { ApiClient } from './client'
 import type { GuidanceResponse, PoseContextPayload } from './types'
 
 /**
  * Client for the `/api/guidance` resource.
  */
 export class GuidanceClient extends ApiClient {
-  constructor(getToken: GetToken, baseUrl?: string) {
-    super(getToken, baseUrl)
-  }
-
   async postGuidance(
     ctx: PoseContextPayload,
     signal?: AbortSignal,

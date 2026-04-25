@@ -61,16 +61,9 @@ function App() {
     handleLandmarks,
   )
 
-  const getTokenRef = useRef(getToken)
-  useEffect(() => {
-    getTokenRef.current = getToken
-  }, [getToken])
   const clientRef = useRef<ReturnType<typeof createGuidanceClient> | null>(null)
   useEffect(() => {
-    const client = createGuidanceClient(
-      BACKEND_URL,
-      () => getTokenRef.current(),
-    )
+    const client = createGuidanceClient(BACKEND_URL)
     clientRef.current = client
     const unsubscribe = client.subscribe(setGuidance)
     return () => {
@@ -97,8 +90,10 @@ function App() {
       local_confidence: localMatch.score,
       image_wh: wh,
     }
-    clientRef.current?.submit(payload)
-  }, [liveLandmarks, localMatch, paused])
+    getToken().then((token) => {
+      clientRef.current?.submit(payload, token)
+    })
+  }, [liveLandmarks, localMatch, paused, getToken])
 
   // If the agent suggests a different template with high confidence, prefer it.
   const targetTemplate = useMemo(() => {

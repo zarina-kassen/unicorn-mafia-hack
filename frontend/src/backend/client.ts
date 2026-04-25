@@ -19,7 +19,7 @@ export interface PoseContextPayload {
 }
 
 export interface GuidanceClient {
-  submit: (ctx: PoseContextPayload) => void
+  submit: (ctx: PoseContextPayload, token: string | null) => void
   subscribe: (cb: (r: GuidanceResponse) => void) => () => void
   stop: () => void
 }
@@ -32,17 +32,14 @@ export interface GuidanceClient {
  *   guidance never overwrites fresh guidance.
  * - Never throws at the caller: network errors are swallowed and subscribers
  *   simply stop receiving updates until the next successful response.
- * - Accepts a `getToken` callback (from Clerk's `useAuth`) so every request
- *   includes the session JWT in the Authorization header.
  */
 export function createGuidanceClient(
   baseUrl: string,
-  getToken: () => Promise<string | null>,
   intervalMs = 1500,
   timeoutMs = 3000,
 ): GuidanceClient {
   let lastSend = 0
-  let pending: PoseContextPayload | null = null
+  let pending: { ctx: PoseContextPayload; token: string | null } | null = null
   let inflight: AbortController | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
   let stopped = false
@@ -51,7 +48,7 @@ export function createGuidanceClient(
   const flush = async () => {
     if (stopped) return
     if (!pending) return
-    const payload = pending
+    const { ctx: payload, token } = pending
     pending = null
     lastSend = Date.now()
     inflight?.abort()
@@ -59,7 +56,6 @@ export function createGuidanceClient(
     inflight = controller
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
     try {
-      const token = await getToken()
       const headers: Record<string, string> = {
         'content-type': 'application/json',
       }
@@ -94,9 +90,9 @@ export function createGuidanceClient(
   }
 
   return {
-    submit(ctx) {
+    submit(ctx, token) {
       if (stopped) return
-      pending = ctx
+      pending = { ctx, token }
       schedule()
     },
     subscribe(cb) {

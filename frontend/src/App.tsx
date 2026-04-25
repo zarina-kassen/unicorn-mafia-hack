@@ -12,6 +12,7 @@ import {
   subscribePoseVariantJob,
 } from './backend/client'
 import { Button } from '@/components/ui/button'
+import './App.css'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? ''
 
@@ -242,34 +243,15 @@ function App() {
                   <span className={`alignment-pill ${alignment.status}`}>
                     {alignmentCopy}
                   </span>
-<<<<<<< HEAD
-                  <Button
+                  <span className="progress-pill">{generationProgress.current}/{generationProgress.total}</span>
+                  <button
                     className="generate-button"
                     type="button"
                     onClick={() => void handleGeneratePoses()}
                     disabled={galleryBusy}
                   >
                     {generationCopy}
-                  </Button>
-                </div>
-              </div>
-
-              <div
-                className="absolute inset-x-[18px] bottom-5 z-[2] flex flex-col items-center gap-2 text-center"
-                style={{ textShadow: 'var(--shadow-cam-text-heavy)' }}
-                aria-live="polite"
-              >
-                <span className="camera-hint-pill max-w-[min(410px,88vw)] rounded-full border border-cam-hairline bg-black/[0.38] px-[15px] py-2.5 text-[0.9rem] font-[850] leading-[1.25] backdrop-blur-[18px]">
-                  {selectedPose.instruction}
-                </span>
-                {landmarkerError && (
-                  <small className="max-w-[min(320px,88vw)] text-[0.72rem] text-cam-error-soft">
-                    Pose tracker: {landmarkerError}
-                  </small>
-                )}
-                {seedMessage && <small>{seedMessage}</small>}
-=======
-                  <span className="progress-pill">{generationProgress.current}/{generationProgress.total}</span>
+                  </button>
                 </div>
                 <div className="camera-icons" aria-hidden="true">
                   <span>⚡</span>
@@ -280,7 +262,6 @@ function App() {
               <div className="camera-bottom-hint" aria-live="polite">
                 <span>{selectedPose.instruction}</span>
                 {landmarkerError && <small>Pose tracker: {landmarkerError}</small>}
->>>>>>> a72007a (c)
               </div>
 
               <button
@@ -359,15 +340,6 @@ function App() {
           {cameraState.status !== 'ready' && (
             <div className="camera-launch">
               <div className="launch-mark" aria-hidden="true" />
-<<<<<<< HEAD
-              <p className="mt-2 -mb-1.5 text-[0.72rem] font-black uppercase tracking-[0.14em] text-cam-accent">
-                Mobile pose camera
-              </p>
-              <h1 className="m-0 max-w-[310px] text-[clamp(2.2rem,11vw,3.8rem)] leading-[0.92] tracking-[-0.07em]">
-                Line up before the shot.
-              </h1>
-              <p className={`m-0 max-w-[300px] text-[0.98rem] leading-[1.45] ${cameraState.status === 'idle' || cameraState.status === 'requesting' ? 'text-cam-ink-muted' : 'text-cam-error'}`}>
-=======
               <p className="launch-kicker">Mobile pose camera</p>
               <h1>Line up before the shot.</h1>
               <p
@@ -377,7 +349,6 @@ function App() {
                     : 'error'
                 }
               >
->>>>>>> a72007a (c)
                 {launchMessage}
               </p>
               {cameraState.status !== 'requesting' &&
@@ -393,116 +364,6 @@ function App() {
             </div>
           )}
         </section>
-<<<<<<< HEAD
-
-        <section className="pose-gallery" aria-label="Generated pose gallery">
-          <div className="flex items-end justify-between gap-3.5 px-4 pb-[13px]">
-            <div>
-              <p className="m-0 text-[0.72rem] font-black uppercase tracking-[0.14em] text-cam-ink-muted">
-                {galleryBusy
-                  ? 'Generating with OpenAI'
-                  : hasGeneratedGallery
-                    ? 'Generated poses'
-                    : generationStatus === 'failed'
-                      ? 'Fallback poses'
-                      : 'Demo fallback'}
-              </p>
-              <h2 className="m-0 mt-0.5 text-[clamp(1.35rem,6vw,2rem)] leading-none tracking-[-0.055em]">
-                {galleryBusy ? 'Creating pose set' : selectedPose.title}
-              </h2>
-            </div>
-            <span className="text-[0.82rem] font-black text-cam-accent">
-              {galleryBusy
-                ? `${generationProgress.current}/${generationProgress.total}`
-                : `${String(galleryPoses.findIndex((pose) => pose.id === selectedPose.id) + 1).padStart(2, '0')} / 10`}
-            </span>
-          </div>
-          {generationError && (
-            <p className="mx-4 -mt-1 mb-3 text-[0.78rem] leading-[1.3] text-cam-error">
-              {generationError}
-            </p>
-          )}
-
-          <div className="gallery-rail">
-            <div className="memory-seed-row">
-              <label className="generate-button" style={{ cursor: 'pointer' }}>
-                Seed taste (up to 5 photos)
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={(event) => void handleSeedImages(event)}
-                  style={{ display: 'none' }}
-                />
-              </label>
-              {seedStatus === 'uploading' && <span>Seeding memory...</span>}
-            </div>
-            <div className="memory-controls-row">
-              <button
-                className="generate-button"
-                type="button"
-                onClick={() => void handlePreferences(true, false, false)}
-              >
-                Camera-roll only
-              </button>
-              <button
-                className="generate-button"
-                type="button"
-                onClick={() => void handlePreferences(true, true, true)}
-              >
-                Enable all sources
-              </button>
-              <button
-                className="generate-button"
-                type="button"
-                onClick={() => void handleResetMemory(false)}
-              >
-                Soft reset memory
-              </button>
-            </div>
-            {privacyStatus && (
-              <div className="memory-status">{privacyStatus}</div>
-            )}
-            <div className="gallery-track">
-              {galleryBusy &&
-                Array.from({ length: 10 }).map((_, index) => (
-                  <div className="pose-card skeleton" key={index}>
-                    <span />
-                  </div>
-                ))}
-
-              {!galleryBusy && galleryLoop.map((pose, index) => {
-                const active = pose.id === selectedPose.id
-                return (
-                  <button
-                    className={active ? 'pose-card active' : 'pose-card'}
-                    type="button"
-                    key={`${pose.id}-${index}`}
-                    onClick={() => {
-                      setSelectedPoseId(pose.id)
-                      void postMemoryFeedback(
-                        {
-                          event: 'candidate_selected',
-                          pose_template_id: pose.template.id,
-                          scene_tags: ['camera_live', 'gallery_choice'],
-                          outcome_score: active ? 0.5 : 0.75,
-                        },
-                        BACKEND_URL,
-                        getToken,
-                      )
-                    }}
-                    aria-pressed={active}
-                  >
-                    <img src={pose.imageSrc} alt={pose.title} />
-                    <span>{pose.title}</span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        </section>
-=======
->>>>>>> a72007a (c)
       </main>
     </div>
   )

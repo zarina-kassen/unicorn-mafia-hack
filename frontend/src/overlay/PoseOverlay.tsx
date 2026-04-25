@@ -7,9 +7,7 @@ import type { PoseTemplate } from '../pose/templates'
 interface PoseOverlayProps {
   videoRef: React.RefObject<HTMLVideoElement | null>
   targetTemplate: PoseTemplate
-  /** Mirror drawing horizontally to match a mirrored selfie video feed. */
   mirrored?: boolean
-  /** Pause drawing without tearing down the canvas. */
   paused?: boolean
 }
 
@@ -65,15 +63,7 @@ function wobble(point: Point, index: number, amplitude: number, phase: number): 
 function drawLooseStroke(
   ctx: CanvasRenderingContext2D,
   points: Point[],
-  {
-    width,
-    alpha,
-    phase,
-  }: {
-    width: number
-    alpha: number
-    phase: number
-  },
+  { width, alpha, phase }: { width: number; alpha: number; phase: number },
 ) {
   if (points.length < 2) return
 
@@ -166,10 +156,7 @@ function drawHuaweiGuide(
   const leftAnkle = p(LM.L_ANKLE)
   const rightAnkle = p(LM.R_ANKLE)
 
-  const centerX = averageX(
-    [leftShoulder, rightShoulder, leftHip, rightHip],
-    width / 2,
-  )
+  const centerX = averageX([leftShoulder, rightShoulder, leftHip, rightHip], width / 2)
   const wideShoulders = [
     spreadFromCenter(leftShoulder, centerX, 1.72),
     spreadFromCenter(rightShoulder, centerX, 1.72),
@@ -209,10 +196,6 @@ function drawHuaweiGuide(
   drawHandDrawnPath(ctx, outerContour, lineWidth, phase + 1.2)
 }
 
-/**
- * Renders the selected pose as a loose, Huawei-like white guide. It avoids
- * live skeleton/debug landmarks so the camera view stays photo-native.
- */
 export function PoseOverlay({
   videoRef,
   targetTemplate,

@@ -1,4 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Show,
+  SignInButton,
+  SignUpButton,
+  UserButton,
+} from '@clerk/react'
 
 import { useCamera } from './camera/useCamera'
 import type { NormalizedLandmark } from './pose/mediapipe'
@@ -6,14 +12,9 @@ import { usePoseLandmarker } from './pose/usePoseLandmarker'
 import { TEMPLATES, getTemplate, type PoseTemplate } from './pose/templates'
 import { matchTemplate } from './pose/matcher'
 import { PoseOverlay } from './overlay/PoseOverlay'
-import {
-  createGuidanceClient,
-  type GuidanceResponse,
-  type PoseContextPayload,
-} from './backend/client'
+import { useGuidance } from './hooks/useGuidance'
+import type { PoseContextPayload } from './api/types'
 import { Button } from '@/components/ui/button'
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? ''
 
 function formatConfidence(score: number): string {
   return `${Math.round(score * 100)}%`
@@ -29,7 +30,7 @@ function App() {
     score: number
     personVisible: boolean
   }>(() => ({ template: TEMPLATES[0], score: 0, personVisible: false }))
-  const [guidance, setGuidance] = useState<GuidanceResponse | null>(null)
+  const { submit: submitGuidance, guidance } = useGuidance()
 
   const landmarkerEnabled = cameraState.status === 'ready' && !paused
 
@@ -53,16 +54,6 @@ function App() {
     handleLandmarks,
   )
 
-  const clientRef = useRef(createGuidanceClient(BACKEND_URL))
-  useEffect(() => {
-    const client = clientRef.current
-    const unsubscribe = client.subscribe(setGuidance)
-    return () => {
-      unsubscribe()
-      client.stop()
-    }
-  }, [])
-
   useEffect(() => {
     if (!liveLandmarks || paused) return
     const video = videoRef.current
@@ -80,8 +71,8 @@ function App() {
       local_confidence: localMatch.score,
       image_wh: wh,
     }
-    clientRef.current.submit(payload)
-  }, [liveLandmarks, localMatch, paused])
+    submitGuidance(payload)
+  }, [liveLandmarks, localMatch, paused, submitGuidance])
 
   // If the agent suggests a different template with high confidence, prefer it.
   const targetTemplate = useMemo(() => {
@@ -102,10 +93,35 @@ function App() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-[1280px] flex-col gap-4 p-6 text-slate-200">
-      <header className="flex items-baseline justify-between border-b border-slate-400/20 pb-2">
-        <h1 className="m-0 text-[1.75rem] tracking-tight">frame-mog</h1>
-        <p className="m-0 text-muted-foreground">Live pose outline camera</p>
+      <header className="flex items-center justify-between border-b border-slate-400/20 pb-2">
+        <div>
+          <h1 className="m-0 text-[1.75rem] tracking-tight">frame-mog</h1>
+          <p className="m-0 text-muted-foreground">Live pose outline camera</p>
+        </div>
+        <Show when="signed-in">
+          <UserButton />
+        </Show>
       </header>
+
+      <Show
+        when="signed-in"
+        fallback={
+          <div className="flex flex-1 flex-col items-center justify-center gap-4 p-12 text-center">
+            <h2 className="m-0 text-2xl">Welcome to frame-mog</h2>
+            <p className="m-0 max-w-[360px] text-muted-foreground">
+              Sign in to access the live pose outline camera.
+            </p>
+            <div className="mt-2 flex gap-3">
+              <SignInButton mode="modal">
+                <Button>Sign in</Button>
+              </SignInButton>
+              <SignUpButton mode="modal">
+                <Button variant="outline">Sign up</Button>
+              </SignUpButton>
+            </div>
+          </div>
+        }
+      >
 
       <main className="grid flex-1 items-start gap-5 grid-cols-[minmax(0,2fr)_minmax(280px,1fr)] max-md:grid-cols-1">
         <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-[#020617] shadow-[0_20px_60px_rgba(15,23,42,0.5)]">
@@ -195,6 +211,8 @@ function App() {
           )}
         </aside>
       </main>
+
+      </Show>
     </div>
   )
 }

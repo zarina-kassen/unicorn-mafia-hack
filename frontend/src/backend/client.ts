@@ -60,6 +60,16 @@ export interface PoseMaskResponse {
   source: string
 }
 
+type GetToken = () => Promise<string | null>
+
+async function withAuthHeaders(getToken?: GetToken): Promise<Headers> {
+  const headers = new Headers()
+  if (!getToken) return headers
+  const token = await getToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  return headers
+}
+
 export async function createPoseVariantJob(
   referenceImage: Blob,
   baseUrl = '',
@@ -164,6 +174,53 @@ export async function extractPoseMask(
     throw new Error('pose mask extraction returned invalid payload')
   }
   return data
+}
+
+export type OnboardingGalleryUploadResult =
+  | { ok: true }
+  | { ok: false; message: string }
+
+export async function uploadOnboardingGalleryImages(
+  files: File[],
+  baseUrl = '',
+  getToken?: GetToken,
+  options?: { allowCameraRoll?: boolean },
+): Promise<OnboardingGalleryUploadResult> {
+  const form = new FormData()
+  form.append('allow_camera_roll', options?.allowCameraRoll === false ? 'false' : 'true')
+  for (const file of files.slice(0, 5)) {
+    form.append('images', file, file.name || 'gallery.jpg')
+  }
+  const headers = await withAuthHeaders(getToken)
+  const res = await fetch(`${baseUrl}/api/memory/onboarding/images`, {
+    method: 'POST',
+    headers,
+    body: form,
+  })
+  if (!res.ok) {
+    let message = `Upload failed (${res.status}).`
+    try {
+      const payload = (await res.json()) as { detail?: string }
+      if (typeof payload.detail === 'string' && payload.detail.trim()) {
+        message = payload.detail.trim()
+      }
+    } catch {
+      // keep generic message
+    }
+    if (res.status === 401) {
+      message = 'Sign in is required to save taste preferences.'
+    }
+    return { ok: false, message }
+  }
+  const data = (await res.json()) as { ok?: boolean }
+  if (data.ok === true) {
+    return { ok: true }
+  }
+  return {
+    ok: false,
+    message:
+      'The server could not learn from these photos right now (memory service off, missing API keys, or tags could not be read). You can skip and try again later.',
+  }
 }
 
 /**

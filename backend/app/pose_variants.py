@@ -91,7 +91,7 @@ async def _generate_and_store_image(
         # Try message.images first (OpenRouter-specific)
         if hasattr(message, "images") and message.images:  # type: ignore[attr-defined]
             images_attr = cast(Any, message.images)  # type: ignore[attr-defined]
-            if isinstance(images_attr, list) and len(images_attr) > 0:
+            if images_attr and isinstance(images_attr, list) and len(images_attr) > 0:
                 try:
                     first_image = images_attr[0]
                     if hasattr(first_image, "image_url") and hasattr(

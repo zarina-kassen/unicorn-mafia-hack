@@ -4,7 +4,6 @@ import {
   SignInButton,
   SignUpButton,
   UserButton,
-  useAuth,
 } from '@clerk/react'
 
 import { useCamera } from './camera/useCamera'
@@ -13,21 +12,15 @@ import { usePoseLandmarker } from './pose/usePoseLandmarker'
 import { TEMPLATES, getTemplate, type PoseTemplate } from './pose/templates'
 import { matchTemplate } from './pose/matcher'
 import { PoseOverlay } from './overlay/PoseOverlay'
-import {
-  createGuidanceClient,
-  type GuidanceResponse,
-  type PoseContextPayload,
-} from './backend/client'
+import { useGuidance } from './hooks/useGuidance'
+import type { PoseContextPayload } from './backend/client'
 import './App.css'
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? ''
 
 function formatConfidence(score: number): string {
   return `${Math.round(score * 100)}%`
 }
 
 function App() {
-  const { getToken } = useAuth()
   const videoRef = useRef<HTMLVideoElement>(null)
   const { state: cameraState, request: requestCamera } = useCamera(videoRef)
   const [paused, setPaused] = useState(false)
@@ -37,7 +30,7 @@ function App() {
     score: number
     personVisible: boolean
   }>(() => ({ template: TEMPLATES[0], score: 0, personVisible: false }))
-  const [guidance, setGuidance] = useState<GuidanceResponse | null>(null)
+  const { submit: submitGuidance, guidance } = useGuidance()
 
   const landmarkerEnabled = cameraState.status === 'ready' && !paused
 
@@ -61,16 +54,6 @@ function App() {
     handleLandmarks,
   )
 
-  const clientRef = useRef(createGuidanceClient(BACKEND_URL))
-  useEffect(() => {
-    const client = clientRef.current
-    const unsubscribe = client.subscribe(setGuidance)
-    return () => {
-      unsubscribe()
-      client.stop()
-    }
-  }, [])
-
   useEffect(() => {
     if (!liveLandmarks || paused) return
     const video = videoRef.current
@@ -88,10 +71,8 @@ function App() {
       local_confidence: localMatch.score,
       image_wh: wh,
     }
-    getToken().then((token) => {
-      clientRef.current?.submit(payload, token)
-    })
-  }, [liveLandmarks, localMatch, paused, getToken])
+    submitGuidance(payload)
+  }, [liveLandmarks, localMatch, paused, submitGuidance])
 
   // If the agent suggests a different template with high confidence, prefer it.
   const targetTemplate = useMemo(() => {

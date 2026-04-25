@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ClerkProvider } from '@clerk/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import './index.css'
 import App from './App.tsx'
 
@@ -10,10 +11,14 @@ if (!PUBLISHABLE_KEY) {
   throw new Error('Add your Clerk Publishable Key to the .env file')
 }
 
+const queryClient = new QueryClient()
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ClerkProvider publishableKey={PUBLISHABLE_KEY} afterSignOutUrl="/">
-      <App />
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
     </ClerkProvider>
   </StrictMode>,
 )

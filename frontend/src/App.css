@@ -4,6 +4,7 @@
   --camera-ink: #f9fafb;
   --camera-muted: rgba(255, 255, 255, 0.68);
   --camera-hairline: rgba(255, 255, 255, 0.22);
+  --camera-warm: #f8e3ac;
   --panel: rgba(23, 26, 34, 0.86);
   --page-pad: clamp(10px, 3vw, 18px);
 }
@@ -147,6 +148,22 @@ button {
   gap: 8px;
   padding: 6px 10px;
   font-size: 0.8rem;
+}
+
+.generate-button {
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 999px;
+  padding: 7px 11px;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 820;
+  background: rgba(6, 6, 8, 0.72);
+  backdrop-filter: blur(12px);
+}
+
+.generate-button:disabled {
+  opacity: 0.65;
+  cursor: progress;
 }
 
 .shutter-button {

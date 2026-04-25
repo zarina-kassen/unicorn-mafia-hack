@@ -46,7 +46,9 @@ async def require_auth(request: Request) -> str:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    user_id: str | None = request_state.payload.get("sub") if request_state.payload else None
+    user_id: str | None = (
+        request_state.payload.get("sub") if request_state.payload else None
+    )
     if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

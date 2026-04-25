@@ -114,7 +114,9 @@ def list_templates(_user_id: str = Depends(require_auth)) -> list[TemplateMeta]:
 
 
 @app.post("/api/guidance", response_model=GuidanceResponse)
-async def guidance(ctx: PoseContext, _user_id: str = Depends(require_auth)) -> GuidanceResponse:
+async def guidance(
+    ctx: PoseContext, _user_id: str = Depends(require_auth)
+) -> GuidanceResponse:
     try:
         result = await get_agent().run(_render_prompt(ctx))
     except Exception as exc:  # noqa: BLE001 — surface all provider errors uniformly

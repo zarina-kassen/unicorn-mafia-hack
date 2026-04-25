@@ -55,8 +55,9 @@ export function createGuidanceClient(
     pending = null
     lastSend = Date.now()
     inflight?.abort()
-    inflight = new AbortController()
-    const timeoutId = setTimeout(() => inflight?.abort(), timeoutMs)
+    const controller = new AbortController()
+    inflight = controller
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
     try {
       const token = await getToken()
       const headers: Record<string, string> = {
@@ -69,7 +70,7 @@ export function createGuidanceClient(
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
-        signal: inflight.signal,
+        signal: controller.signal,
       })
       if (!res.ok) return
       const data = (await res.json()) as GuidanceResponse
@@ -78,7 +79,7 @@ export function createGuidanceClient(
       // network / abort / parsing failure — fall back to local guidance.
     } finally {
       clearTimeout(timeoutId)
-      inflight = null
+      if (inflight === controller) inflight = null
     }
   }
 

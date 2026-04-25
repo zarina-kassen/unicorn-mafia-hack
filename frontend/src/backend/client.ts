@@ -24,6 +24,53 @@ export interface GuidanceClient {
   stop: () => void
 }
 
+export interface PoseVariantResult {
+  id: string
+  title: string
+  instruction: string
+  image_url: string
+  pose_template_id: string
+  replaceable: boolean
+}
+
+export type PoseVariantJobStatus = 'queued' | 'generating' | 'ready' | 'failed'
+
+export interface PoseVariantJob {
+  job_id: string
+  status: PoseVariantJobStatus
+  progress: number
+  total: number
+  results: PoseVariantResult[]
+  error?: string | null
+}
+
+export async function createPoseVariantJob(
+  referenceImage: Blob,
+  baseUrl = '',
+): Promise<PoseVariantJob> {
+  const form = new FormData()
+  form.append('reference_image', referenceImage, 'camera-reference.jpg')
+  const res = await fetch(`${baseUrl}/api/pose-variants`, {
+    method: 'POST',
+    body: form,
+  })
+  if (!res.ok) {
+    throw new Error(`Pose generation failed to start (${res.status})`)
+  }
+  return (await res.json()) as PoseVariantJob
+}
+
+export async function getPoseVariantJob(
+  jobId: string,
+  baseUrl = '',
+): Promise<PoseVariantJob> {
+  const res = await fetch(`${baseUrl}/api/pose-variants/${jobId}`)
+  if (!res.ok) {
+    throw new Error(`Pose generation status failed (${res.status})`)
+  }
+  return (await res.json()) as PoseVariantJob
+}
+
 /**
  * Throttled client for the backend guidance agent.
  *

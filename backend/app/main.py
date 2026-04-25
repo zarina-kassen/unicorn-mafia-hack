@@ -7,11 +7,24 @@ import os
 from functools import lru_cache
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic_ai import Agent
 
-from .schemas import GuidanceResponse, Landmark, PoseContext, TemplateMeta
+from .pose_variants import (
+    GENERATED_ROOT,
+    create_pose_variant_job,
+    get_pose_variant_job,
+    run_pose_variant_job,
+)
+from .schemas import (
+    GuidanceResponse,
+    Landmark,
+    PoseContext,
+    PoseVariantJob,
+    TemplateMeta,
+)
 from .templates import TEMPLATES
 
 load_dotenv()
@@ -81,10 +94,12 @@ def get_agent() -> Agent[None, GuidanceResponse]:
     )
 
 app = FastAPI(title="frame-mog")
+GENERATED_ROOT.mkdir(parents=True, exist_ok=True)
+app.mount("/generated", StaticFiles(directory=GENERATED_ROOT), name="generated")
 
 _allowed_origins = os.environ.get(
     "ALLOWED_ORIGINS",
-    "http://localhost:5173,http://127.0.0.1:5173",
+    "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174",
 ).split(",")
 app.add_middleware(
     CORSMiddleware,
@@ -113,3 +128,24 @@ async def guidance(ctx: PoseContext) -> GuidanceResponse:
         logger.exception("Guidance agent failed")
         raise HTTPException(status_code=502, detail=f"agent error: {exc}") from exc
     return result.output
+
+
+@app.post("/api/pose-variants", response_model=PoseVariantJob)
+async def create_pose_variants(
+    background_tasks: BackgroundTasks,
+    reference_image: UploadFile = File(...),
+) -> PoseVariantJob:
+    if not reference_image.content_type or not reference_image.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="reference_image must be an image")
+
+    job = await create_pose_variant_job(reference_image)
+    background_tasks.add_task(run_pose_variant_job, job.job_id)
+    return job
+
+
+@app.get("/api/pose-variants/{job_id}", response_model=PoseVariantJob)
+def get_pose_variants(job_id: str) -> PoseVariantJob:
+    job = get_pose_variant_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="pose variant job not found")
+    return job

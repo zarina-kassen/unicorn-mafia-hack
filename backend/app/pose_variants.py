@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
+from typing import Literal, cast
 from uuid import uuid4
 
 from fastapi import UploadFile
@@ -28,9 +29,18 @@ GENERATED_ROOT = Path(
 )
 GENERATED_TTL_SECONDS = int(os.environ.get("GENERATED_TTL_SECONDS", str(6 * 60 * 60)))
 IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "gpt-image-1")
-IMAGE_SIZE: str = os.environ.get("IMAGE_SIZE", "1024x1536")
-IMAGE_QUALITY: str = os.environ.get("IMAGE_QUALITY", "medium")
-IMAGE_INPUT_FIDELITY: str = os.environ.get("IMAGE_INPUT_FIDELITY", "high")
+IMAGE_SIZE = cast(
+    Literal["256x256", "512x512", "1024x1024", "1536x1024", "1024x1536", "auto"],
+    os.environ.get("IMAGE_SIZE", "1024x1536"),
+)
+IMAGE_QUALITY = cast(
+    Literal["standard", "low", "medium", "high", "auto"],
+    os.environ.get("IMAGE_QUALITY", "medium"),
+)
+IMAGE_INPUT_FIDELITY = cast(
+    Literal["high", "low"],
+    os.environ.get("IMAGE_INPUT_FIDELITY", "high"),
+)
 
 SYSTEM_PROMPT = """\
 You are a pose-variation image generation assistant for a mobile camera coaching app.
@@ -203,6 +213,7 @@ async def create_pose_variant_job(reference_image: UploadFile) -> PoseVariantJob
         status="queued",
         progress=0,
         total=len(POSE_VARIANTS),
+        results=[],
     )
     with _lock:
         _jobs[job_id] = job
@@ -262,9 +273,9 @@ def run_pose_variant_job(job_id: str) -> None:
                     model=IMAGE_MODEL,
                     image=image_file,
                     prompt=_prompt_for_pose_with_personalization(spec, personalization),
-                    size=IMAGE_SIZE,  # ty: ignore[invalid-argument-type]
-                    quality=IMAGE_QUALITY,  # ty: ignore[invalid-argument-type]
-                    input_fidelity=IMAGE_INPUT_FIDELITY,  # ty: ignore[invalid-argument-type]
+                    size=IMAGE_SIZE,
+                    quality=IMAGE_QUALITY,
+                    input_fidelity=IMAGE_INPUT_FIDELITY,
                     output_format="jpeg",
                 )
 
@@ -284,11 +295,14 @@ def run_pose_variant_job(job_id: str) -> None:
             results.append(
                 PoseVariantResult(
                     id=spec.id,
+                    slot_index=index - 1,
                     title=spec.title,
                     instruction=spec.instruction,
                     image_url=image_url,
                     pose_template_id=spec.pose_template_id,
                     replaceable=False,
+                    tier="fast",
+                    model=IMAGE_MODEL,
                 )
             )
             _update_job(job_id, progress=index, results=results.copy())

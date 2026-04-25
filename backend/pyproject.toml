@@ -11,6 +11,10 @@ dependencies = [
     "pydantic-ai-slim[openai]>=1.16",
     "python-dotenv>=1.0.1",
     "python-multipart>=0.0.9",
+    "clerk-backend-api>=0.3.0",
+    "boto3>=1.34.0",
+    "botocore>=1.34.0",
+    "mubit-sdk>=0.5.3",
 ]
 
 [dependency-groups]

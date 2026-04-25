@@ -97,9 +97,52 @@ button {
   z-index: 2;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 8px;
   text-shadow: 0 2px 14px rgba(0, 0, 0, 0.82);
+}
+
+.camera-top-bar__wallet {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.credit-pill {
+  min-width: 2.25rem;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--camera-hairline, rgba(255, 255, 255, 0.2));
+  background: rgba(10, 10, 12, 0.65);
+  backdrop-filter: blur(12px);
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.92);
+  text-align: center;
+}
+
+.wallet-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid var(--camera-hairline, rgba(255, 255, 255, 0.2));
+  background: rgba(10, 10, 12, 0.65);
+  backdrop-filter: blur(12px);
+  color: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.12s ease;
+}
+
+.wallet-icon-button:hover {
+  background: rgba(22, 24, 28, 0.86);
+}
+
+.wallet-icon-button:active {
+  transform: scale(0.96);
 }
 
 .camera-brand {

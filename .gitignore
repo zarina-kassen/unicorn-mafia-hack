@@ -5,4 +5,6 @@ sample/
 node_modules/
 .env
 backend/.env
+# Local SQLite billing ledger (dev)
+backend/billing.sqlite3
 .png

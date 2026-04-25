@@ -122,3 +122,30 @@ class MemoryResetRequest(BaseModel):
     """Clear or reduce remembered user taste profile."""
 
     hard_reset: bool = False
+
+
+class BillingAccountResponse(BaseModel):
+    """Current billing/quota state for the signed-in user."""
+
+    user_id: str
+    plan_type: str
+    balance: int
+    free_monthly_credits: int
+    guidance_cost: int
+    pose_variant_cost: int
+    has_stripe_customer: bool
+
+
+class CheckoutRequest(BaseModel):
+    """Create a Stripe checkout session for a credit pack."""
+
+    pack_id: str
+    success_url: str
+    cancel_url: str
+
+
+class CheckoutResponse(BaseModel):
+    """Stripe checkout session details."""
+
+    checkout_url: str
+    session_id: str

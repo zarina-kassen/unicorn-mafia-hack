@@ -108,12 +108,15 @@ def test_pose_mask_endpoint_returns_502_on_model_error(
     assert "quota exceeded" in body["detail"]
 
 
-def test_memory_onboarding_images_rejects_too_many(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_memory_onboarding_images_rejects_too_many(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     main_mod = importlib.import_module("app.main")
     monkeypatch.setattr(main_mod, "get_mubit_memory", lambda: None)
     client = TestClient(app)
     files = [
-        ("images", (f"img-{idx}.jpg", b"\xff\xd8\xff", "image/jpeg")) for idx in range(6)
+        ("images", (f"img-{idx}.jpg", b"\xff\xd8\xff", "image/jpeg"))
+        for idx in range(6)
     ]
     r = client.post("/api/memory/onboarding/images", files=files)
     assert r.status_code == 400

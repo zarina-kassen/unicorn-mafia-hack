@@ -12,22 +12,45 @@ import struct
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import AsyncIterator
+from typing import AsyncIterator, cast
 from urllib.parse import urlparse
 from uuid import uuid4
 
 from dotenv import load_dotenv
 import httpx
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic_ai import Agent
 
 from .auth import require_auth
+from .billing import (
+    CONFIG,
+    add_credits,
+    check_rate_limit,
+    create_checkout_session,
+    credit_refund_for_failed_job,
+    get_account_state,
+    handle_stripe_webhook,
+    init_billing_store,
+    spend_credits,
+)
 from .memory_onboarding import OnboardingImageInput, extract_memory_seed_entries
 from .mubit_memory import get_mubit_memory
 from .schemas import (
+    BillingAccountResponse,
+    CheckoutRequest,
+    CheckoutResponse,
     GuidanceResponse,
     Landmark,
     MemoryPreferencesRequest,
@@ -287,26 +310,31 @@ async def _llm_extract_pose_mask(image_url: str) -> tuple[str, int, int]:
 
 
 @lru_cache(maxsize=1)
-def get_agent():  # type: ignore[no-untyped-def]
+def get_agent() -> Agent[None, GuidanceResponse]:
     """Build the Pydantic AI agent on first use.
 
     Lazy so importing this module doesn't require a gateway key — handy for
     tests and for the /api/templates endpoint which doesn't touch the model.
     """
-    return Agent(
-        AGENT_MODEL,
-        output_type=GuidanceResponse,
-        system_prompt=SYSTEM_PROMPT,
+    return cast(
+        Agent[None, GuidanceResponse],
+        Agent(
+            AGENT_MODEL,
+            output_type=GuidanceResponse,
+            system_prompt=SYSTEM_PROMPT,
+        ),
     )
 
 
 app = FastAPI(title="frame-mog")
 _jobs_lock = asyncio.Lock()
 _pose_jobs: dict[str, "PoseJobState"] = {}
+_pose_job_owners: dict[str, str] = {}
 
 generated_dir = Path(__file__).resolve().parent.parent / "generated"
 generated_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/generated", StaticFiles(directory=generated_dir), name="generated")
+init_billing_store()
 
 _allowed_origins = os.environ.get(
     "ALLOWED_ORIGINS",
@@ -321,22 +349,116 @@ app.add_middleware(
 )
 
 
+def _client_ip(request: Request) -> str:
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def count_active_pose_jobs() -> int:
+    return sum(
+        1 for s in _pose_jobs.values() if s.job.status in ("queued", "generating")
+    )
+
+
+def count_user_active_pose_jobs(user_id: str) -> int:
+    return sum(
+        1
+        for jid, s in _pose_jobs.items()
+        if _pose_job_owners.get(jid) == user_id
+        and s.job.status in ("queued", "generating")
+    )
+
+
+def _enforce_guidance_limits(user_id: str, request: Request) -> None:
+    check_rate_limit(
+        f"guidance:user:{user_id}",
+        max_count=CONFIG.guidance_rate_per_hour,
+        window_seconds=60 * 60,
+    )
+    check_rate_limit(
+        f"guidance:ip:{_client_ip(request)}",
+        max_count=max(CONFIG.guidance_rate_per_hour * 2, 60),
+        window_seconds=60 * 60,
+    )
+
+
+def _enforce_pose_job_limits(user_id: str, request: Request) -> None:
+    account = get_account_state(user_id)
+    per_day_limit = (
+        CONFIG.pose_jobs_per_day_paid
+        if account["plan_type"] != "free"
+        else CONFIG.pose_jobs_per_day_free
+    )
+    check_rate_limit(
+        f"pose:user:{user_id}",
+        max_count=per_day_limit,
+        window_seconds=24 * 60 * 60,
+    )
+    check_rate_limit(
+        f"pose:ip:{_client_ip(request)}",
+        max_count=max(per_day_limit * 2, 10),
+        window_seconds=24 * 60 * 60,
+    )
+    check_rate_limit(
+        "pose:global:hour",
+        max_count=CONFIG.max_pose_jobs_per_hour_global,
+        window_seconds=60 * 60,
+    )
+    if count_active_pose_jobs() >= int(
+        os.environ.get("MAX_CONCURRENT_POSE_JOBS_GLOBAL", "12")
+    ):
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "global_capacity_reached",
+                "message": "Generation capacity is currently full.",
+            },
+        )
+    if count_user_active_pose_jobs(user_id) >= int(
+        os.environ.get("MAX_ACTIVE_POSE_JOBS_PER_USER", "2")
+    ):
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "user_capacity_reached",
+                "message": "Too many active jobs for this user.",
+            },
+        )
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "model": AGENT_MODEL}
 
 
 @app.get("/api/templates", response_model=list[TemplateMeta])
-def list_templates() -> list[TemplateMeta]:
+def list_templates(_user_id: str = Depends(require_auth)) -> list[TemplateMeta]:
     return TEMPLATES
 
 
 @app.post("/api/guidance", response_model=GuidanceResponse)
-async def guidance(ctx: PoseContext) -> GuidanceResponse:
+async def guidance(
+    ctx: PoseContext,
+    request: Request,
+    user_id: str = Depends(require_auth),
+) -> GuidanceResponse:
+    _enforce_guidance_limits(user_id, request)
+    spend_credits(
+        user_id,
+        amount=CONFIG.guidance_cost,
+        event_type="guidance_request",
+    )
     try:
         result = await get_agent().run(_render_prompt(ctx))
-    except Exception as exc:  # noqa: BLE001 — surface all provider errors uniformly
+    except Exception as exc:  # noqa: BLE001
         logger.exception("Guidance agent failed")
+        add_credits(
+            user_id,
+            amount=CONFIG.guidance_cost,
+            event_type="guidance_refund",
+            metadata={"reason": "provider_error"},
+        )
         raise HTTPException(status_code=502, detail=f"agent error: {exc}") from exc
     return result.output
 
@@ -347,7 +469,9 @@ async def extract_pose_mask(req: PoseMaskRequest) -> PoseMaskResponse:
         mask_url, width, height = await _llm_extract_pose_mask(req.image_url)
     except Exception as exc:  # noqa: BLE001
         logger.exception("Pose mask extraction failed")
-        raise HTTPException(status_code=502, detail=f"mask extraction failed: {exc}") from exc
+        raise HTTPException(
+            status_code=502, detail=f"mask extraction failed: {exc}"
+        ) from exc
     return PoseMaskResponse(mask_url=mask_url, width=width, height=height, source="llm")
 
 
@@ -592,6 +716,7 @@ async def _run_pose_job(job_id: str) -> None:
             logger.exception("Pose slot failed", exc_info=exc)
             failures += 1
 
+    user_id = _pose_job_owners.get(job_id)
     async with _jobs_lock:
         state = _pose_jobs.get(job_id)
         if not state:
@@ -599,6 +724,8 @@ async def _run_pose_job(job_id: str) -> None:
         if failures and state.job.progress == 0:
             state.job.status = "failed"
             state.job.error = "All image generations failed."
+            if user_id:
+                credit_refund_for_failed_job(user_id, job_id)
         elif state.job.progress < state.job.total:
             state.job.status = "ready"
         else:
@@ -608,7 +735,9 @@ async def _run_pose_job(job_id: str) -> None:
 
 @app.post("/api/pose-variants", response_model=PoseVariantJob)
 async def create_pose_variants(
+    request: Request,
     reference_image: UploadFile = File(...),
+    user_id: str = Depends(require_auth),
 ) -> PoseVariantJob:
     # Validate file is an image
     allowed_mime_types = {"image/jpeg", "image/png", "image/webp"}
@@ -628,6 +757,8 @@ async def create_pose_variants(
             detail="Invalid file extension. Only .jpg, .jpeg, .png, and .webp files are supported.",
         )
 
+    _enforce_pose_job_limits(user_id, request)
+
     image_bytes = await reference_image.read()
     reference_image_data_url = (
         f"data:{mime};base64,{base64.b64encode(image_bytes).decode('ascii')}"
@@ -645,15 +776,33 @@ async def create_pose_variants(
         _pose_jobs[job_id] = PoseJobState(
             job=job, reference_image_data_url=reference_image_data_url
         )
+    _pose_job_owners[job_id] = user_id
+    try:
+        spend_credits(
+            user_id,
+            amount=CONFIG.pose_variant_cost,
+            event_type="pose_variant_job",
+            event_ref=job_id,
+        )
+    except HTTPException:
+        async with _jobs_lock:
+            _pose_jobs.pop(job_id, None)
+        _pose_job_owners.pop(job_id, None)
+        raise
     asyncio.create_task(_run_pose_job(job_id))
     return job
 
 
 @app.get("/api/pose-variants/{job_id}", response_model=PoseVariantJob)
-async def get_pose_variants_job(job_id: str) -> PoseVariantJob:
+async def get_pose_variants_job(
+    job_id: str, user_id: str = Depends(require_auth)
+) -> PoseVariantJob:
     async with _jobs_lock:
         state = _pose_jobs.get(job_id)
         if not state:
+            raise HTTPException(status_code=404, detail="Job not found")
+        owner = _pose_job_owners.get(job_id)
+        if owner is not None and owner != user_id:
             raise HTTPException(status_code=404, detail="Job not found")
         return state.job
 
@@ -685,6 +834,34 @@ async def stream_pose_variants_events(job_id: str) -> StreamingResponse:
                 yield ": keepalive\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.get("/api/billing/account", response_model=BillingAccountResponse)
+def get_billing_account(user_id: str = Depends(require_auth)) -> BillingAccountResponse:
+    return BillingAccountResponse(**get_account_state(user_id))
+
+
+@app.post("/api/billing/checkout", response_model=CheckoutResponse)
+def start_checkout(
+    payload: CheckoutRequest,
+    user_id: str = Depends(require_auth),
+) -> CheckoutResponse:
+    session = create_checkout_session(
+        user_id=user_id,
+        pack_id=payload.pack_id,
+        success_url=payload.success_url,
+        cancel_url=payload.cancel_url,
+    )
+    return CheckoutResponse(**session)
+
+
+@app.post("/api/billing/webhook")
+async def stripe_webhook(
+    request: Request,
+    stripe_signature: str | None = Header(default=None, alias="Stripe-Signature"),
+) -> dict[str, object]:
+    body = await request.body()
+    return handle_stripe_webhook(body, stripe_signature)
 
 
 @app.post("/api/memory/onboarding/images", response_model=MemoryStatusResponse)

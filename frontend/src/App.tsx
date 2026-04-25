@@ -7,6 +7,7 @@ import {
   useState,
 } from 'react'
 import { useAuth } from '@clerk/react'
+import { Wallet } from 'lucide-react'
 
 import {
   compositeMirroredVideoWithOverlay,
@@ -19,12 +20,16 @@ import { extractPoseGuideFromGeneratedImage } from './pose/extractPoseFromImage'
 import { GALLERY_POSES, type GalleryPose } from './pose/galleryTargets'
 import { getTemplate } from './pose/templates'
 import {
+  ApiError,
   createPoseVariantJob,
+  getBillingAccount,
+  type BillingAccount,
   type PoseVariantResult,
   subscribePoseVariantJob,
   uploadOnboardingGalleryImages,
 } from './backend/client'
 import { Button } from '@/components/ui/button'
+import { WalletSheet } from './components/WalletSheet'
 import './App.css'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? ''
@@ -88,7 +93,9 @@ function galleryPoseFromResult(result: PoseVariantResult): GalleryPose {
 }
 
 function App() {
-  const { getToken } = useAuth()
+  const { getToken, isSignedIn } = useAuth()
+  const [walletOpen, setWalletOpen] = useState(false)
+  const [billingAccount, setBillingAccount] = useState<BillingAccount | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const poseOverlayCanvasRef = useRef<HTMLCanvasElement>(null)
   const { state: cameraState, request: requestCamera } = useCamera(videoRef)
@@ -127,9 +134,40 @@ function App() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const alreadyDone = window.localStorage.getItem(ONBOARDING_STORAGE_KEY) === 'done'
-    setOnboardingDone(alreadyDone)
+    const t = window.setTimeout(() => {
+      const alreadyDone = window.localStorage.getItem(ONBOARDING_STORAGE_KEY) === 'done'
+      setOnboardingDone(alreadyDone)
+    }, 0)
+    return () => clearTimeout(t)
   }, [])
+
+  const refreshBilling = useCallback(async () => {
+    if (!isSignedIn) {
+      setBillingAccount(null)
+      return
+    }
+    try {
+      const account = await getBillingAccount(BACKEND_URL, getToken)
+      setBillingAccount(account)
+    } catch {
+      setBillingAccount(null)
+    }
+  }, [getToken, isSignedIn])
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      void refreshBilling()
+    }, 0)
+    return () => clearTimeout(t)
+  }, [refreshBilling])
+
+  useEffect(() => {
+    if (generationStatus !== 'ready') return
+    const t = window.setTimeout(() => {
+      void refreshBilling()
+    }, 0)
+    return () => clearTimeout(t)
+  }, [generationStatus, refreshBilling])
 
   useEffect(() => {
     gallerySheetYRef.current = gallerySheetY
@@ -221,10 +259,12 @@ function App() {
 
   useLayoutEffect(() => {
     if (!galleryVisible) {
-      setGallerySheetY(0)
-      galleryMaxYRef.current = 0
-      setGallerySheetMaxY(0)
-      return
+      const t = window.setTimeout(() => {
+        setGallerySheetY(0)
+        galleryMaxYRef.current = 0
+        setGallerySheetMaxY(0)
+      }, 0)
+      return () => clearTimeout(t)
     }
     measureGallerySheet()
     const el = gallerySheetRef.current
@@ -248,10 +288,11 @@ function App() {
 
     try {
       const frame = await captureVideoFrame(videoRef.current)
-      const job = await createPoseVariantJob(frame, BACKEND_URL)
+      const job = await createPoseVariantJob(frame, BACKEND_URL, getToken)
       setGenerationJobId(job.job_id)
       setGenerationProgress({ current: job.progress, total: job.total })
       setGenerationStatus('generating')
+      void refreshBilling()
     } catch (err) {
       setGalleryPoses([])
       outlineExtractionStartedRef.current.clear()
@@ -260,9 +301,16 @@ function App() {
       setSelectedPoseId(null)
       setGenerationJobId(null)
       setGenerationStatus('failed')
-      setGenerationError(err instanceof Error ? err.message : String(err))
+      if (err instanceof ApiError && err.status === 402) {
+        setGenerationError(
+          err.detail?.message ?? 'Not enough credits. Open the wallet to top up.',
+        )
+        void refreshBilling()
+      } else {
+        setGenerationError(err instanceof Error ? err.message : String(err))
+      }
     }
-  }, [cameraState.status, galleryBusy])
+  }, [cameraState.status, galleryBusy, getToken, refreshBilling])
 
   const onShutterClick = useCallback(async () => {
     if (!canTakePicture || !videoRef.current) return
@@ -591,6 +639,21 @@ function App() {
                 style={{ textShadow: 'var(--shadow-cam-text)' }}
                 aria-live="polite"
               >
+                <div className="camera-top-bar__wallet">
+                  {isSignedIn && billingAccount !== null ? (
+                    <span className="credit-pill" title="Credits balance">
+                      {billingAccount.balance}
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="wallet-icon-button"
+                    aria-label="Credits and top up"
+                    onClick={() => setWalletOpen(true)}
+                  >
+                    <Wallet className="size-5" aria-hidden />
+                  </button>
+                </div>
                 <button
                   className="generate-button"
                   type="button"
@@ -600,6 +663,13 @@ function App() {
                   {generationCopy}
                 </button>
               </div>
+              <WalletSheet
+                open={walletOpen}
+                onClose={() => setWalletOpen(false)}
+                baseUrl={BACKEND_URL}
+                getToken={getToken}
+                onBalanceUpdated={() => void refreshBilling()}
+              />
 
               <div className="camera-bottom-hint" aria-live="polite">
                 <span>{bottomHintPrimary}</span>

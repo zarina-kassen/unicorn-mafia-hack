@@ -53,6 +53,13 @@ export interface PoseVariantEvent {
   result?: PoseVariantResult
 }
 
+export interface PoseMaskResponse {
+  mask_url: string
+  width: number
+  height: number
+  source: string
+}
+
 export async function createPoseVariantJob(
   referenceImage: Blob,
   baseUrl = '',
@@ -87,6 +94,22 @@ export function subscribePoseVariantJob(
   baseUrl = '',
 ): () => void {
   const stream = new EventSource(`${baseUrl}/api/pose-variants/${jobId}/events`)
+  let debounce: ReturnType<typeof setTimeout> | null = null
+  /** True after React cleanup calls `close()` — must not treat as a failure. */
+  let closedIntentionally = false
+
+  const clearDebounce = () => {
+    if (debounce !== null) {
+      clearTimeout(debounce)
+      debounce = null
+    }
+  }
+
+  stream.onopen = () => {
+    if (closedIntentionally) return
+    clearDebounce()
+  }
+
   stream.onmessage = (message) => {
     try {
       const parsed = JSON.parse(message.data) as PoseVariantEvent
@@ -95,8 +118,52 @@ export function subscribePoseVariantJob(
       // Ignore malformed events.
     }
   }
-  stream.onerror = (event) => onError(event)
-  return () => stream.close()
+
+  // Browsers fire `error` while reconnecting; `close()` also fires `error` with
+  // CLOSED state. Only surface failure when the socket dies unexpectedly.
+  stream.onerror = () => {
+    if (closedIntentionally) return
+    clearDebounce()
+    debounce = setTimeout(() => {
+      debounce = null
+      if (closedIntentionally) return
+      if (stream.readyState === EventSource.CLOSED) {
+        onError(new Event('eventsource-closed'))
+      }
+    }, 2500)
+  }
+
+  return () => {
+    closedIntentionally = true
+    clearDebounce()
+    stream.close()
+  }
+}
+
+export async function extractPoseMask(
+  imageUrl: string,
+  baseUrl = '',
+): Promise<PoseMaskResponse> {
+  const res = await fetch(`${baseUrl}/api/pose-mask`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ image_url: imageUrl }),
+  })
+  if (!res.ok) {
+    let detail = `${res.status}`
+    try {
+      const payload = (await res.json()) as { detail?: string }
+      if (typeof payload.detail === 'string' && payload.detail) detail = payload.detail
+    } catch {
+      // keep status-only fallback
+    }
+    throw new Error(`pose mask extraction failed: ${detail}`)
+  }
+  const data = (await res.json()) as PoseMaskResponse
+  if (!data.mask_url || !Number.isFinite(data.width) || !Number.isFinite(data.height)) {
+    throw new Error('pose mask extraction returned invalid payload')
+  }
+  return data
 }
 
 /**

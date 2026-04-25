@@ -6,11 +6,14 @@ import asyncio
 import base64
 import json
 import logging
+import mimetypes
 import os
+import struct
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import AsyncIterator
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from dotenv import load_dotenv
@@ -25,6 +28,8 @@ from .schemas import (
     GuidanceResponse,
     Landmark,
     PoseContext,
+    PoseMaskRequest,
+    PoseMaskResponse,
     PoseVariantJob,
     PoseVariantResult,
     TemplateMeta,
@@ -43,6 +48,8 @@ OPENROUTER_BASE_URL = os.environ.get(
 FAST_IMAGE_MODEL = os.environ.get("FAST_IMAGE_MODEL", "black-forest-labs/flux-schnell")
 HQ_IMAGE_MODEL = os.environ.get("HQ_IMAGE_MODEL", "openai/gpt-image-1")
 POSE_VARIANT_TOTAL = 6
+# Mask extraction should default to the faster/cheaper tier, independent from HQ variants.
+MASK_MODEL = os.environ.get("MASK_MODEL", FAST_IMAGE_MODEL)
 
 SYSTEM_PROMPT = """\
 You are a real-time photo-posing coach. Each request represents one pose sample
@@ -95,6 +102,180 @@ def _render_prompt(ctx: PoseContext) -> str:
         f"Landmark summary: {_summarize_landmarks(ctx.landmarks)}\n\n"
         "Return a GuidanceResponse telling the user what to do next."
     )
+
+
+def _normalize_local_image_path(image_url: str) -> Path | None:
+    parsed = urlparse(image_url)
+    path = parsed.path if parsed.scheme else image_url
+    if not path.startswith("/generated/"):
+        return None
+    candidate = (generated_dir / path.removeprefix("/generated/")).resolve()
+    try:
+        candidate.relative_to(generated_dir.resolve())
+    except ValueError:
+        return None
+    return candidate if candidate.is_file() else None
+
+
+async def _image_url_to_model_input(image_url: str) -> str:
+    if image_url.startswith("data:"):
+        return image_url
+    local = _normalize_local_image_path(image_url)
+    if local is not None:
+        mime = mimetypes.guess_type(local.name)[0] or "image/png"
+        b64 = base64.b64encode(local.read_bytes()).decode("ascii")
+        return f"data:{mime};base64,{b64}"
+    return image_url
+
+
+def _image_dimensions_from_bytes(data: bytes) -> tuple[int, int] | None:
+    if len(data) < 24:
+        return None
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+    if data.startswith(b"\xff\xd8"):
+        i = 2
+        while i + 9 < len(data):
+            if data[i] != 0xFF:
+                i += 1
+                continue
+            marker = data[i + 1]
+            if marker in {0xC0, 0xC1, 0xC2, 0xC3, 0xC9, 0xCA, 0xCB}:
+                h = struct.unpack(">H", data[i + 5 : i + 7])[0]
+                w = struct.unpack(">H", data[i + 7 : i + 9])[0]
+                return w, h
+            if i + 4 >= len(data):
+                break
+            block = struct.unpack(">H", data[i + 2 : i + 4])[0]
+            i += 2 + block
+    return None
+
+
+async def _store_mask_image(b64_or_url: str) -> tuple[str, int, int]:
+    if b64_or_url.startswith("http://") or b64_or_url.startswith("https://"):
+        return b64_or_url, 1024, 1536
+    raw_b64 = (
+        b64_or_url.split(",", 1)[1] if b64_or_url.startswith("data:") else b64_or_url
+    )
+    binary = base64.b64decode(raw_b64)
+    dims = _image_dimensions_from_bytes(binary) or (1024, 1536)
+    file_name = f"{uuid4().hex}-mask.png"
+    out_path = generated_dir / file_name
+    out_path.write_bytes(binary)
+    return f"/generated/{file_name}", dims[0], dims[1]
+
+
+async def _llm_extract_pose_mask(image_url: str) -> tuple[str, int, int]:
+    if not OPENROUTER_API_KEY:
+        raise RuntimeError("OPENROUTER_API_KEY is not set")
+    model_input = await _image_url_to_model_input(image_url)
+    prompt = (
+        "Create a person segmentation matte from this image.\n"
+        "Output exactly one mask image with these strict rules:\n"
+        "- Main person silhouette must be solid white (#FFFFFF)\n"
+        "- Background must be solid black (#000000), no checkerboard pattern\n"
+        "- No text, no borders, no shadows, no gradients, no background remnants\n"
+        "- Preserve the SAME subject pose, camera angle, framing, position, and scale from source\n"
+        "- Do NOT re-center, re-pose, re-frame, or beautify the subject\n"
+        "- Output must be pixel-aligned to the original subject silhouette"
+    )
+    payload = {
+        "model": MASK_MODEL,
+        "modalities": ["image"],
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": model_input}},
+                ],
+            }
+        ],
+    }
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    timeout = httpx.Timeout(45.0, connect=10.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        res = await client.post(
+            f"{OPENROUTER_BASE_URL}/chat/completions",
+            headers=headers,
+            json=payload,
+        )
+        if res.status_code >= 400:
+            detail = res.text
+            try:
+                payload_err = res.json()
+                if isinstance(payload_err, dict):
+                    err = payload_err.get("error")
+                    if isinstance(err, dict):
+                        msg = err.get("message")
+                        code = err.get("code")
+                        if isinstance(msg, str) and msg.strip():
+                            detail = msg.strip()
+                        if code is not None:
+                            detail = f"{detail} (code: {code})"
+            except Exception:  # noqa: BLE001
+                pass
+            raise RuntimeError(f"Mask model failed ({res.status_code}): {detail}")
+        body = res.json()
+    data = body.get("data") or []
+    if data:
+        first = data[0]
+        b64 = first.get("b64_json")
+        if isinstance(b64, str) and b64:
+            return await _store_mask_image(b64)
+        url = first.get("url") or first.get("image_url")
+        if isinstance(url, str):
+            return await _store_mask_image(url)
+
+    images = body.get("images") or []
+    if images:
+        first = images[0]
+        b64 = first.get("b64_json")
+        if isinstance(b64, str) and b64:
+            return await _store_mask_image(b64)
+        image_url = first.get("image_url") or first.get("url")
+        if isinstance(image_url, str):
+            return await _store_mask_image(image_url)
+        if isinstance(image_url, dict) and isinstance(image_url.get("url"), str):
+            return await _store_mask_image(image_url["url"])
+
+    choices = body.get("choices") or []
+    if choices:
+        message = choices[0].get("message") or {}
+        message_images = message.get("images") or []
+        if message_images:
+            first = message_images[0]
+            b64 = first.get("b64_json")
+            if isinstance(b64, str) and b64:
+                return await _store_mask_image(b64)
+            image_url = first.get("image_url") or first.get("url")
+            if isinstance(image_url, str):
+                return await _store_mask_image(image_url)
+            if isinstance(image_url, dict) and isinstance(image_url.get("url"), str):
+                return await _store_mask_image(image_url["url"])
+
+        content = message.get("content")
+        if isinstance(content, list):
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+                if part.get("type") == "image_url":
+                    image_url = part.get("image_url")
+                    if isinstance(image_url, str):
+                        return await _store_mask_image(image_url)
+                    if isinstance(image_url, dict) and isinstance(
+                        image_url.get("url"), str
+                    ):
+                        return await _store_mask_image(image_url["url"])
+                if part.get("type") == "image_base64" and isinstance(
+                    part.get("data"), str
+                ):
+                    return await _store_mask_image(part["data"])
+
+    raise RuntimeError(f"Unsupported mask response shape from OpenRouter: {body}")
 
 
 @lru_cache(maxsize=1)
@@ -150,6 +331,16 @@ async def guidance(ctx: PoseContext) -> GuidanceResponse:
         logger.exception("Guidance agent failed")
         raise HTTPException(status_code=502, detail=f"agent error: {exc}") from exc
     return result.output
+
+
+@app.post("/api/pose-mask", response_model=PoseMaskResponse)
+async def extract_pose_mask(req: PoseMaskRequest) -> PoseMaskResponse:
+    try:
+        mask_url, width, height = await _llm_extract_pose_mask(req.image_url)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Pose mask extraction failed")
+        raise HTTPException(status_code=502, detail=f"mask extraction failed: {exc}") from exc
+    return PoseMaskResponse(mask_url=mask_url, width=width, height=height, source="llm")
 
 
 @dataclass
@@ -478,7 +669,9 @@ async def stream_pose_variants_events(job_id: str) -> StreamingResponse:
             if is_done and state_now and state_now.events.empty():
                 break
             try:
-                message = await asyncio.wait_for(state_now.events.get(), timeout=12.0)
+                # Keep this below typical proxy idle limits (~10s) so the SSE
+                # stream stays open through ngrok and similar tunnels.
+                message = await asyncio.wait_for(state_now.events.get(), timeout=8.0)
                 yield message
             except TimeoutError:
                 yield ": keepalive\n\n"

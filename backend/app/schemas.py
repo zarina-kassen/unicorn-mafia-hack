@@ -76,3 +76,18 @@ class PoseVariantJob(BaseModel):
     total: int
     results: list[PoseVariantResult]
     error: str | None = None
+
+
+class PoseMaskRequest(BaseModel):
+    """Input for LLM-based body mask extraction from one generated image."""
+
+    image_url: str = Field(min_length=1)
+
+
+class PoseMaskResponse(BaseModel):
+    """Mask image metadata returned by the LLM extraction pipeline."""
+
+    mask_url: str = Field(min_length=1)
+    width: int = Field(ge=1)
+    height: int = Field(ge=1)
+    source: str = Field(min_length=1)

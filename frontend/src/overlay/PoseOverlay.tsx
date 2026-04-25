@@ -1,14 +1,17 @@
 import { useEffect, useRef } from 'react'
-
-import type { NormalizedLandmark } from '../pose/mediapipe'
-import { LM } from '../pose/mediapipe'
-import type { PoseTemplate } from '../pose/templates'
+import { outlineFromPersonMaskGrid, type NormPoint } from '../pose/maskToOutline'
 
 interface PoseOverlayProps {
   videoRef: React.RefObject<HTMLVideoElement | null>
-  targetTemplate: PoseTemplate
-  mirrored?: boolean
+  /** LLM-generated white-on-transparent person mask URL. */
+  photoMaskUrl?: string | null
   paused?: boolean
+}
+
+interface PreparedMask {
+  canvas: HTMLCanvasElement
+  bbox: { x: number; y: number; width: number; height: number } | null
+  outlineNorm: NormPoint[] | null
 }
 
 interface Point {
@@ -16,198 +19,253 @@ interface Point {
   y: number
 }
 
-function distance(a: Point, b: Point): number {
-  return Math.hypot(a.x - b.x, a.y - b.y)
-}
-
 function midpoint(a: Point, b: Point): Point {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
 }
 
-function averageX(points: Array<Point | null>, fallback: number): number {
-  const visible = points.filter((point): point is Point => point !== null)
-  if (visible.length === 0) return fallback
-  return visible.reduce((sum, point) => sum + point.x, 0) / visible.length
+function traceSmoothClosedContour(ctx: CanvasRenderingContext2D, points: Point[]): void {
+  const n = points.length
+  if (n < 3) return
+  const m0 = midpoint(points[n - 1], points[0])
+  ctx.moveTo(m0.x, m0.y)
+  for (let i = 0; i < n; i += 1) {
+    const p = points[i]
+    const next = points[(i + 1) % n]
+    const m = midpoint(p, next)
+    ctx.quadraticCurveTo(p.x, p.y, m.x, m.y)
+  }
+  ctx.closePath()
 }
 
-function spreadFromCenter(
-  point: Point | null,
-  centerX: number,
-  factor: number,
-): Point | null {
-  if (!point) return null
-  return { x: centerX + (point.x - centerX) * factor, y: point.y }
+function makeAlphaMaskCanvas(image: CanvasImageSource, width: number, height: number): PreparedMask {
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.floor(width))
+  canvas.height = Math.max(1, Math.floor(height))
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return { canvas, bbox: null, outlineNorm: null }
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  const data = img.data
+
+  const w = canvas.width
+  const h = canvas.height
+  const n = w * h
+  const keep = new Uint8Array(n)
+  const alphaCoverage = (() => {
+    let visible = 0
+    for (let i = 3; i < data.length; i += 4) if (data[i] > 16) visible += 1
+    return visible / n
+  })()
+
+  if (alphaCoverage > 0.02 && alphaCoverage < 0.98) {
+    for (let idx = 0; idx < n; idx += 1) {
+      const i = idx * 4
+      keep[idx] = data[i + 3] > 16 ? 1 : 0
+    }
+  } else {
+    // LLM often returns white foreground over gray/checker background with opaque alpha.
+    let cornerSum = 0
+    let cornerSq = 0
+    let cornerN = 0
+    const sampleRadius = Math.max(6, Math.floor(Math.min(w, h) * 0.02))
+    for (let y = 0; y < h; y += 1) {
+      for (let x = 0; x < w; x += 1) {
+        const isCorner =
+          (x < sampleRadius && y < sampleRadius) ||
+          (x >= w - sampleRadius && y < sampleRadius) ||
+          (x < sampleRadius && y >= h - sampleRadius) ||
+          (x >= w - sampleRadius && y >= h - sampleRadius)
+        if (!isCorner) continue
+        const i = (y * w + x) * 4
+        const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+        cornerSum += lum
+        cornerSq += lum * lum
+        cornerN += 1
+      }
+    }
+    const mean = cornerN > 0 ? cornerSum / cornerN : 200
+    const variance = cornerN > 0 ? Math.max(0, cornerSq / cornerN - mean * mean) : 100
+    const std = Math.sqrt(variance)
+    const threshold = Math.min(250, Math.max(210, mean + std * 1.8))
+
+    for (let idx = 0; idx < n; idx += 1) {
+      const i = idx * 4
+      const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+      keep[idx] = lum >= threshold ? 1 : 0
+    }
+  }
+
+  // Keep largest connected foreground component only.
+  const q = new Int32Array(n)
+  const visited = new Uint8Array(n)
+  let bestCount = 0
+  let bestIndices: Int32Array | null = null
+  for (let seed = 0; seed < n; seed += 1) {
+    if (!keep[seed] || visited[seed]) continue
+    let qh = 0
+    let qt = 0
+    q[qt++] = seed
+    visited[seed] = 1
+    while (qh < qt) {
+      const idx = q[qh++]
+      const x = idx % w
+      const y = (idx - x) / w
+      const push = (nIdx: number) => {
+        if (!keep[nIdx] || visited[nIdx]) return
+        visited[nIdx] = 1
+        q[qt++] = nIdx
+      }
+      if (x > 0) push(idx - 1)
+      if (x + 1 < w) push(idx + 1)
+      if (y > 0) push(idx - w)
+      if (y + 1 < h) push(idx + w)
+    }
+    if (qt > bestCount) {
+      bestCount = qt
+      bestIndices = q.slice(0, qt)
+    }
+  }
+
+  keep.fill(0)
+  if (bestIndices) {
+    for (let i = 0; i < bestIndices.length; i += 1) keep[bestIndices[i]] = 1
+  }
+
+  let minX = w
+  let minY = h
+  let maxX = -1
+  let maxY = -1
+
+  for (let idx = 0; idx < n; idx += 1) {
+    const i = idx * 4
+    data[i] = 255
+    data[i + 1] = 255
+    data[i + 2] = 255
+    const isFg = keep[idx] === 1
+    data[i + 3] = isFg ? 255 : 0
+    if (isFg) {
+      const x = idx % w
+      const y = (idx - x) / w
+      if (x < minX) minX = x
+      if (y < minY) minY = y
+      if (x > maxX) maxX = x
+      if (y > maxY) maxY = y
+    }
+  }
+  ctx.putImageData(img, 0, 0)
+  const bbox =
+    maxX >= minX && maxY >= minY
+      ? { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 }
+      : null
+  let outlineNorm: NormPoint[] | null = null
+  if (bbox && bbox.width >= 3 && bbox.height >= 3) {
+    const grid = new Float32Array(bbox.width * bbox.height)
+    for (let y = 0; y < bbox.height; y += 1) {
+      for (let x = 0; x < bbox.width; x += 1) {
+        const srcIdx = (bbox.y + y) * w + (bbox.x + x)
+        grid[y * bbox.width + x] = keep[srcIdx] ? 1 : 0
+      }
+    }
+    outlineNorm = outlineFromPersonMaskGrid(grid, bbox.width, bbox.height)
+  }
+  return { canvas, bbox, outlineNorm }
 }
 
-function projectLandmark(
-  landmarks: NormalizedLandmark[],
-  index: number,
+function drawMaskSilhouette(
+  ctx: CanvasRenderingContext2D,
+  prepared: PreparedMask,
   width: number,
   height: number,
-  mirrored: boolean,
-): Point | null {
-  const lm = landmarks[index]
-  if (!lm || (lm.visibility ?? 0) < 0.2) return null
-  const x = mirrored ? (1 - lm.x) * width : lm.x * width
-  return { x, y: lm.y * height }
-}
+  dpr: number,
+): void {
+  const bbox = prepared.bbox
+  if (!bbox) return
 
-function wobble(point: Point, index: number, amplitude: number, phase: number): Point {
-  const wave = index * 1.618 + phase
-  return {
-    x: point.x + Math.sin(wave) * amplitude,
-    y: point.y + Math.cos(wave * 1.37) * amplitude,
-  }
-}
+  // Fit subject to target size similar to camera guide UX.
+  const targetHeight = height * 0.82
+  const scale = Math.max(0.1, targetHeight / bbox.height)
+  const drawW = bbox.width * scale
+  const drawH = bbox.height * scale
+  const dx = (width - drawW) / 2
+  const dy = height - drawH - height * 0.06
 
-function drawLooseStroke(
-  ctx: CanvasRenderingContext2D,
-  points: Point[],
-  { width, alpha, phase }: { width: number; alpha: number; phase: number },
-) {
-  if (points.length < 2) return
+  const glow = Math.max(8, 14 * dpr)
+  const lineWidth = Math.max(2.0, Math.min(4.2, width / dpr * 0.0045)) * dpr
 
   ctx.save()
-  ctx.globalAlpha = alpha
-  ctx.strokeStyle = '#fffef7'
-  ctx.lineWidth = width
-  ctx.lineCap = 'round'
-  ctx.lineJoin = 'round'
-  ctx.shadowColor = 'rgba(255, 255, 255, 0.7)'
-  ctx.shadowBlur = width * 0.75
-
-  const jitter = Math.max(1.2, width * 0.18)
-  const first = wobble(points[0], 0, jitter, phase)
-  ctx.beginPath()
-  ctx.moveTo(first.x, first.y)
-
-  for (let i = 1; i < points.length - 1; i += 1) {
-    const current = wobble(points[i], i, jitter, phase)
-    const next = wobble(points[i + 1], i + 1, jitter, phase)
-    const control = midpoint(current, next)
-    ctx.quadraticCurveTo(current.x, current.y, control.x, control.y)
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+  const outline = prepared.outlineNorm
+  if (!outline || outline.length < 3) {
+    ctx.restore()
+    return
   }
+  const projected: Point[] = outline.map((p) => ({
+    x: dx + p.x * drawW,
+    y: dy + p.y * drawH,
+  }))
 
-  const last = wobble(points[points.length - 1], points.length - 1, jitter, phase)
-  ctx.lineTo(last.x, last.y)
+  // Soft glow stroke.
+  ctx.beginPath()
+  traceSmoothClosedContour(ctx, projected)
+  ctx.filter = `blur(${glow}px)`
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.26)'
+  ctx.lineWidth = lineWidth * 1.8
+  ctx.lineJoin = 'round'
+  ctx.lineCap = 'round'
+  ctx.stroke()
+
+  // Main crisp contour (line only, no fill).
+  ctx.beginPath()
+  traceSmoothClosedContour(ctx, projected)
+  ctx.filter = 'none'
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.98)'
+  ctx.lineWidth = lineWidth
+  ctx.lineJoin = 'round'
+  ctx.lineCap = 'round'
   ctx.stroke()
   ctx.restore()
 }
 
-function drawHandDrawnPath(
-  ctx: CanvasRenderingContext2D,
-  points: Point[],
-  lineWidth: number,
-  phase: number,
-) {
-  drawLooseStroke(ctx, points, { width: lineWidth + 2, alpha: 0.28, phase })
-  drawLooseStroke(ctx, points, { width: lineWidth, alpha: 0.96, phase: phase + 2.1 })
-  drawLooseStroke(ctx, points, {
-    width: Math.max(2, lineWidth * 0.52),
-    alpha: 0.48,
-    phase: phase + 4.8,
-  })
-}
-
-function drawLooseEllipse(
-  ctx: CanvasRenderingContext2D,
-  center: Point,
-  rx: number,
-  ry: number,
-  lineWidth: number,
-  phase: number,
-) {
-  const points: Point[] = []
-  const steps = 46
-  for (let i = 0; i <= steps; i += 1) {
-    const t = (Math.PI * 2 * i) / steps
-    const uneven = 1 + Math.sin(t * 3 + phase) * 0.035 + Math.cos(t * 5) * 0.025
-    points.push({
-      x: center.x + Math.cos(t) * rx * uneven,
-      y: center.y + Math.sin(t) * ry * uneven,
-    })
-  }
-  drawHandDrawnPath(ctx, points, lineWidth, phase)
-}
-
-function compact(points: Array<Point | null>): Point[] {
-  return points.filter((point): point is Point => point !== null)
-}
-
-function drawHuaweiGuide(
-  ctx: CanvasRenderingContext2D,
-  landmarks: NormalizedLandmark[],
-  width: number,
-  height: number,
-  mirrored: boolean,
-) {
-  const p = (index: number) => projectLandmark(landmarks, index, width, height, mirrored)
-  const nose = p(LM.NOSE)
-  const leftShoulder = p(LM.L_SHOULDER)
-  const rightShoulder = p(LM.R_SHOULDER)
-  const leftElbow = p(LM.L_ELBOW)
-  const rightElbow = p(LM.R_ELBOW)
-  const leftWrist = p(LM.L_WRIST)
-  const rightWrist = p(LM.R_WRIST)
-  const leftHip = p(LM.L_HIP)
-  const rightHip = p(LM.R_HIP)
-  const leftKnee = p(LM.L_KNEE)
-  const rightKnee = p(LM.R_KNEE)
-  const leftAnkle = p(LM.L_ANKLE)
-  const rightAnkle = p(LM.R_ANKLE)
-
-  const centerX = averageX([leftShoulder, rightShoulder, leftHip, rightHip], width / 2)
-  const wideShoulders = [
-    spreadFromCenter(leftShoulder, centerX, 1.72),
-    spreadFromCenter(rightShoulder, centerX, 1.72),
-  ] as const
-  const shoulderWidth =
-    wideShoulders[0] && wideShoulders[1]
-      ? distance(wideShoulders[0], wideShoulders[1])
-      : width * 0.2
-  const lineWidth = Math.max(7, Math.min(22, width * 0.018))
-  const phase = 0.35
-
-  if (nose) {
-    drawLooseEllipse(
-      ctx,
-      { x: nose.x, y: nose.y + shoulderWidth * 0.12 },
-      shoulderWidth * 0.58,
-      shoulderWidth * 0.72,
-      lineWidth,
-      phase,
-    )
-  }
-
-  const outerContour = compact([
-    spreadFromCenter(leftWrist, centerX, 1.95),
-    spreadFromCenter(leftElbow, centerX, 1.9),
-    spreadFromCenter(leftShoulder, centerX, 1.72),
-    spreadFromCenter(leftHip, centerX, 1.42),
-    spreadFromCenter(leftKnee, centerX, 1.48),
-    spreadFromCenter(leftAnkle, centerX, 1.36),
-    spreadFromCenter(rightAnkle, centerX, 1.36),
-    spreadFromCenter(rightKnee, centerX, 1.48),
-    spreadFromCenter(rightHip, centerX, 1.42),
-    spreadFromCenter(rightShoulder, centerX, 1.72),
-    spreadFromCenter(rightElbow, centerX, 1.9),
-    spreadFromCenter(rightWrist, centerX, 1.95),
-  ])
-  drawHandDrawnPath(ctx, outerContour, lineWidth, phase + 1.2)
-}
-
 export function PoseOverlay({
   videoRef,
-  targetTemplate,
-  mirrored = true,
+  photoMaskUrl = null,
   paused = false,
 }: PoseOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const templateRef = useRef<PoseTemplate>(targetTemplate)
+  const preparedMaskRef = useRef<PreparedMask | null>(null)
 
   useEffect(() => {
-    templateRef.current = targetTemplate
-  }, [targetTemplate])
+    if (!photoMaskUrl) {
+      preparedMaskRef.current = null
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const img = new Image()
+          img.crossOrigin = 'anonymous'
+          img.onload = () => resolve(img)
+          img.onerror = () => reject(new Error('Mask image failed to load'))
+          img.src = photoMaskUrl
+        })
+        if (cancelled) return
+        preparedMaskRef.current = makeAlphaMaskCanvas(
+          image,
+          image.naturalWidth || image.width || 1,
+          image.naturalHeight || image.height || 1,
+        )
+      } catch {
+        if (cancelled) return
+        preparedMaskRef.current = null
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [photoMaskUrl])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -233,15 +291,13 @@ export function PoseOverlay({
       if (cancelled) return
       const ctx = canvas.getContext('2d')
       if (ctx) {
+        const dpr = window.devicePixelRatio || 1
         ctx.clearRect(0, 0, canvas.width, canvas.height)
         if (!paused) {
-          drawHuaweiGuide(
-            ctx,
-            templateRef.current.landmarks,
-            canvas.width,
-            canvas.height,
-            mirrored,
-          )
+          const preparedMask = preparedMaskRef.current
+          if (preparedMask) {
+            drawMaskSilhouette(ctx, preparedMask, canvas.width, canvas.height, dpr)
+          }
         }
       }
       rafId = requestAnimationFrame(draw)
@@ -253,7 +309,7 @@ export function PoseOverlay({
       cancelAnimationFrame(rafId)
       ro.disconnect()
     }
-  }, [videoRef, mirrored, paused])
+  }, [videoRef, paused])
 
-  return <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none mix-blend-screen" />
+  return <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none" />
 }

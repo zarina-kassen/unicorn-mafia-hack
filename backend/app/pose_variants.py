@@ -16,7 +16,7 @@ from .agents import PoseAgentDeps as AgentDeps, get_pose_generation_agent
 from .auth.clerk import require_auth
 from .config import settings
 from .dependencies import get_openai_client
-from .schemas import OpenRouterImage, PoseTargetSpec, PoseVariantResult
+from .schemas import PoseTargetSpec, PoseVariantResult
 from .storage.database import store_image
 
 logger = logging.getLogger(__name__)
@@ -82,43 +82,46 @@ async def _generate_and_store_image(
             messages=cast(list, [{"role": "user", "content": message_content}]),
         )
 
-        # Extract image from response - OpenRouter returns images in message.images
+        # Extract image from response - OpenRouter may return images in different formats
         message = response.choices[0].message
-        if response.choices and hasattr(message, "images") and message.images:  # type: ignore[attr-defined]
-            # Cast to Any to handle the ~AlwaysFalsy type from OpenAI library
-            images_attr = cast(Any, message.images)  # type: ignore[attr-defined]
-            if images_attr:
-                try:
-                    # Validate response structure using Pydantic model
-                    first_image = OpenRouterImage.model_validate(images_attr[0])
-                    image_data_url = first_image.image_url.url
-                except Exception as exc:
-                    logger.warning(
-                        "Image generation failed for slot %d: Invalid image format: %s",
-                        slot_index,
-                        exc,
-                    )
-                    return None
 
-                if image_data_url:
-                    image_url = await _store_base64_image(image_data_url, job_id)
-                else:
-                    logger.warning(
-                        "Image generation failed for slot %d: No image URL in response",
-                        slot_index,
-                    )
-                    return None
-            else:
-                logger.warning(
-                    "Image generation failed for slot %d: Empty images array",
-                    slot_index,
-                )
-                return None
-        else:
+        # Try to extract image from various possible response formats
+        image_data_url: str | None = None
+
+        # Try message.images first (OpenRouter-specific)
+        if hasattr(message, "images") and message.images:  # type: ignore[attr-defined]
+            images_attr = cast(Any, message.images)  # type: ignore[attr-defined]
+            if isinstance(images_attr, list) and len(images_attr) > 0:
+                try:
+                    first_image = images_attr[0]
+                    if hasattr(first_image, "image_url") and hasattr(
+                        first_image.image_url, "url"
+                    ):
+                        image_data_url = first_image.image_url.url
+                    elif isinstance(first_image, dict) and "url" in first_image:
+                        image_data_url = first_image["url"]
+                except Exception:
+                    pass
+
+        # If no images in message.images, try parsing from content
+        if not image_data_url and message.content:
+            try:
+                import re
+
+                url_match = re.search(r'https?://[^\s"]+', message.content)
+                if url_match:
+                    image_data_url = url_match.group(0)
+            except Exception:
+                pass
+
+        if not image_data_url:
             logger.warning(
-                "Image generation failed for slot %d: No images in response", slot_index
+                "Image generation failed for slot %d: No image URL found in response",
+                slot_index,
             )
             return None
+
+        image_url = await _store_base64_image(image_data_url, job_id)
     except Exception as exc:
         logger.warning("Image generation failed for slot %d: %s", slot_index, exc)
         return None

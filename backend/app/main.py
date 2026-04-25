@@ -98,7 +98,7 @@ def _render_prompt(ctx: PoseContext) -> str:
 
 
 @lru_cache(maxsize=1)
-def get_agent() -> Agent[None, GuidanceResponse]:
+def get_agent():  # type: ignore[no-untyped-def]
     """Build the Pydantic AI agent on first use.
 
     Lazy so importing this module doesn't require a gateway key — handy for

@@ -255,7 +255,9 @@ def run_pose_variant_job(job_id: str) -> None:
             )
             _update_job(job_id, progress=index, results=results.copy())
 
-        _update_job(job_id, status="ready", progress=len(POSE_VARIANTS), results=results)
+        _update_job(
+            job_id, status="ready", progress=len(POSE_VARIANTS), results=results
+        )
     except Exception as exc:  # noqa: BLE001 - generation provider failures are surfaced as job errors
         logger.exception("Pose variant job failed: %s", job_id)
         _update_job(job_id, status="failed", error=_safe_error(exc), results=results)

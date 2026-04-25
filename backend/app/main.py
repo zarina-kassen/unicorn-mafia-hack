@@ -52,12 +52,18 @@ def _summarize_landmarks(lm: list[Landmark]) -> str:
     if not lm:
         return "no landmarks"
     important = {
-        11: "L-shoulder", 12: "R-shoulder",
-        13: "L-elbow", 14: "R-elbow",
-        15: "L-wrist", 16: "R-wrist",
-        23: "L-hip", 24: "R-hip",
-        25: "L-knee", 26: "R-knee",
-        27: "L-ankle", 28: "R-ankle",
+        11: "L-shoulder",
+        12: "R-shoulder",
+        13: "L-elbow",
+        14: "R-elbow",
+        15: "L-wrist",
+        16: "R-wrist",
+        23: "L-hip",
+        24: "R-hip",
+        25: "L-knee",
+        26: "R-knee",
+        27: "L-ankle",
+        28: "R-ankle",
     }
     parts: list[str] = []
     for idx, name in important.items():
@@ -93,6 +99,7 @@ def get_agent() -> Agent[None, GuidanceResponse]:
         output_type=GuidanceResponse,
         system_prompt=SYSTEM_PROMPT,
     )
+
 
 app = FastAPI(title="frame-mog")
 GENERATED_ROOT.mkdir(parents=True, exist_ok=True)
@@ -138,7 +145,9 @@ async def create_pose_variants(
     background_tasks: BackgroundTasks,
     reference_image: UploadFile = File(...),
 ) -> PoseVariantJob:
-    if not reference_image.content_type or not reference_image.content_type.startswith("image/"):
+    if not reference_image.content_type or not reference_image.content_type.startswith(
+        "image/"
+    ):
         raise HTTPException(status_code=400, detail="reference_image must be an image")
 
     job = await create_pose_variant_job(reference_image)

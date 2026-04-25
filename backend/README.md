@@ -25,8 +25,7 @@ Endpoints:
 - `POST /api/guidance` — `PoseContext` → `GuidanceResponse`
 - `POST /api/pose-variants` — multipart `reference_image` → async job
 - `GET  /api/pose-variants/{job_id}` — poll generated pose gallery status
-- `POST /api/memory/onboarding` — seed taste memory from up to 5 extracted entries
-- `POST /api/memory/feedback` — store selection/outcome feedback as memory lessons
+- `POST /api/memory/onboarding/images` — multipart `images` (1–5) + taste extraction → Mubit seed
 - `POST /api/memory/preferences` — persist per-source learning preferences
 - `POST /api/memory/reset` — soft/hard user memory reset request
 - `GET  /generated/...` — temporary local generated image files
@@ -59,19 +58,18 @@ GENERATED_TTL_SECONDS=21600
 MUBIT_API_KEY=mbt_...
 MUBIT_ENDPOINT=https://api.mubit.ai
 MUBIT_TRANSPORT=auto
+ONBOARDING_VISION_MODEL=gpt-4.1-mini
 ```
 
 ### Mubit personalization
 
 When `MUBIT_API_KEY` is set:
 
-- `/api/pose-variants` fetches a short personalization block from Mubit and injects it
-  into pose-generation prompts.
-- `/api/memory/onboarding` stores camera-roll seed preferences (up to 5 entries).
-- `/api/memory/feedback` records interaction outcomes (`success`/`failure`) to improve
-  future candidate generation.
+- `/api/memory/onboarding/images` stores extracted taste tags from user-selected photos.
+- `/api/memory/preferences` and `/api/memory/reset` update the user’s memory policy.
 
-If Mubit is unavailable, endpoints fail open (core generation still works).
+`OPENAI_API_KEY` is required for onboarding image analysis. If Mubit or OpenAI is unavailable,
+memory endpoints return `ok: false` while the rest of the API keeps working.
 
 ## Tests
 

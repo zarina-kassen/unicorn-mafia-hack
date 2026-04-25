@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from pydantic_ai import Agent
-from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.models.openai import OpenAIChatModel
 
 from ..config import settings
 from ..schemas import PoseTarget, PoseTargetSpec
@@ -36,7 +36,7 @@ def get_pose_generation_agent() -> Agent[PoseAgentDeps, list[PoseTargetSpec]]:
     os.environ["OPENAI_API_KEY"] = settings.openrouter_api_key
     os.environ["OPENAI_BASE_URL"] = settings.openrouter_base_url
 
-    model = OpenAIModel(settings.agent_model, provider="openai")
+    model = OpenAIChatModel(settings.agent_model, provider="openai")
     return Agent[PoseAgentDeps, list[PoseTargetSpec]](
         model=model,
         deps_type=PoseAgentDeps,

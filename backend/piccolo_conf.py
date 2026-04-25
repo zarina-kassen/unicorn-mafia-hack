@@ -17,7 +17,7 @@ DB = PostgresEngine(
 
 APP_CONFIG = AppConfig(
     app_name="frame_mog",
-    table_classes=[
+    table_classes=[  # type: ignore
         "app.storage.database.GeneratedImage",
     ],
     migrations_folder_path="migrations",

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+from typing import cast
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -67,16 +68,16 @@ async def _generate_and_store_image(
     )
 
     try:
-        # Use OpenRouter chat completions with modalities for image generation
+        # Use OpenRouter chat completions for image generation
         response = await client.chat.completions.create(
             model=settings.image_model,
             messages=[{"role": "user", "content": prompt}],
-            modalities=["image"],  # Request image output
         )
 
         # Extract image from response - OpenRouter returns images in message.images
-        if response.choices and response.choices[0].message.images:
-            images = response.choices[0].message.images
+        message = cast(dict, response.choices[0].message)
+        if response.choices and message.get("images"):
+            images = message.get("images")
             if images:
                 try:
                     # Validate response structure using Pydantic model
@@ -154,7 +155,7 @@ async def create_pose_variants(
     for result in processed_results:
         if isinstance(result, Exception):
             logger.warning("Error processing target: %s", result)
-        elif result is not None:
+        elif isinstance(result, PoseVariantResult):
             results.append(result)
 
     return results

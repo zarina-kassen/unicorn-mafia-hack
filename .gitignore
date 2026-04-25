@@ -5,4 +5,4 @@ sample/
 node_modules/
 .env
 backend/.env
-
+.png

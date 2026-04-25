@@ -199,11 +199,58 @@ button {
   height: 50px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.95);
+  transition: transform 0.12s ease-out;
+}
+
+.shutter-button:active:not(:disabled) > span {
+  transform: scale(0.9);
 }
 
 .shutter-button:disabled {
   opacity: 0.7;
   cursor: progress;
+}
+
+@keyframes shutter-flash {
+  0% {
+    opacity: 0;
+  }
+
+  22% {
+    opacity: 0.96;
+  }
+
+  40% {
+    opacity: 0.96;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+.shutter-flash-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  background: #fff;
+  opacity: 0;
+}
+
+.shutter-flash-overlay.is-active {
+  animation: shutter-flash 0.16s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shutter-button > span {
+    transition: none;
+  }
+
+  .shutter-flash-overlay.is-active {
+    animation: none;
+    opacity: 0;
+  }
 }
 
 .camera-bottom-hint {

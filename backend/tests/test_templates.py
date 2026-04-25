@@ -69,3 +69,37 @@ def test_memory_reset_endpoint_without_mubit() -> None:
     r = client.post("/api/memory/reset", json={"hard_reset": False})
     assert r.status_code == 200
     assert "ok" in r.json()
+
+
+def test_pose_outline_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app import main as main_module
+
+    async def fake_extract(_image_url: str) -> tuple[str, int, int]:
+        return "/generated/fake-mask.png", 320, 480
+
+    monkeypatch.setattr(main_module, "_llm_extract_pose_mask", fake_extract)
+    client = TestClient(app)
+    r = client.post("/api/pose-mask", json={"image_url": "/generated/fake.png"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["mask_url"] == "/generated/fake-mask.png"
+    assert body["width"] == 320
+    assert body["height"] == 480
+    assert body["source"] == "llm"
+
+
+def test_pose_mask_endpoint_returns_502_on_model_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import main as main_module
+
+    async def fake_extract(_image_url: str) -> tuple[str, int, int]:
+        raise RuntimeError("quota exceeded")
+
+    monkeypatch.setattr(main_module, "_llm_extract_pose_mask", fake_extract)
+    client = TestClient(app)
+    r = client.post("/api/pose-mask", json={"image_url": "/generated/fake.png"})
+    assert r.status_code == 502
+    body = r.json()
+    assert "detail" in body
+    assert "quota exceeded" in body["detail"]

@@ -53,6 +53,13 @@ export interface PoseVariantEvent {
   result?: PoseVariantResult
 }
 
+export interface PoseMaskResponse {
+  mask_url: string
+  width: number
+  height: number
+  source: string
+}
+
 export async function createPoseVariantJob(
   referenceImage: Blob,
   baseUrl = '',
@@ -131,6 +138,32 @@ export function subscribePoseVariantJob(
     clearDebounce()
     stream.close()
   }
+}
+
+export async function extractPoseMask(
+  imageUrl: string,
+  baseUrl = '',
+): Promise<PoseMaskResponse> {
+  const res = await fetch(`${baseUrl}/api/pose-mask`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ image_url: imageUrl }),
+  })
+  if (!res.ok) {
+    let detail = `${res.status}`
+    try {
+      const payload = (await res.json()) as { detail?: string }
+      if (typeof payload.detail === 'string' && payload.detail) detail = payload.detail
+    } catch {
+      // keep status-only fallback
+    }
+    throw new Error(`pose mask extraction failed: ${detail}`)
+  }
+  const data = (await res.json()) as PoseMaskResponse
+  if (!data.mask_url || !Number.isFinite(data.width) || !Number.isFinite(data.height)) {
+    throw new Error('pose mask extraction returned invalid payload')
+  }
+  return data
 }
 
 /**

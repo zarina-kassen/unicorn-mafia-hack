@@ -65,16 +65,6 @@
     --color-cam-button-face: var(--cam-button-face);
     --color-cam-button-border: var(--cam-button-border);
 
-    /* ---- Shadows (registered as custom properties for use in arbitrary values) ---- */
-    --shadow-cam-preview: 0 30px 80px var(--cam-shadow-heavy), inset 0 0 0 1px var(--cam-glow-faint);
-    --shadow-cam-panel: 0 22px 70px var(--cam-shadow-heavy);
-    --shadow-cam-card: 0 16px 34px var(--cam-shadow-medium);
-    --shadow-cam-card-active: 0 18px 42px var(--cam-shadow-strong), 0 0 0 4px var(--cam-subtle-border);
-    --shadow-cam-button: 0 12px 30px var(--cam-shadow-medium);
-    --shadow-cam-launch-btn: 0 18px 48px var(--cam-shadow-heavy), 0 0 0 8px var(--cam-glow-subtle);
-    --shadow-cam-text: 0 2px 14px var(--cam-shadow-text);
-    --shadow-cam-text-heavy: 0 2px 18px var(--cam-shadow-text-heavy);
-
     /* ---- Radii ---- */
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
@@ -83,6 +73,20 @@
     --radius-2xl: calc(var(--radius) * 1.8);
     --radius-3xl: calc(var(--radius) * 2.2);
     --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* Shadow tokens need their own non-inline @theme so they are emitted as CSS
+   custom properties — var(--shadow-cam-*) references in CSS rules and inline
+   React styles depend on these existing at runtime. */
+@theme {
+    --shadow-cam-preview: 0 30px 80px var(--cam-shadow-heavy), inset 0 0 0 1px var(--cam-glow-faint);
+    --shadow-cam-panel: 0 22px 70px var(--cam-shadow-heavy);
+    --shadow-cam-card: 0 16px 34px var(--cam-shadow-medium);
+    --shadow-cam-card-active: 0 18px 42px var(--cam-shadow-strong), 0 0 0 4px var(--cam-subtle-border);
+    --shadow-cam-button: 0 12px 30px var(--cam-shadow-medium);
+    --shadow-cam-launch-btn: 0 18px 48px var(--cam-shadow-heavy), 0 0 0 8px var(--cam-glow-subtle);
+    --shadow-cam-text: 0 2px 14px var(--cam-shadow-text);
+    --shadow-cam-text-heavy: 0 2px 18px var(--cam-shadow-text-heavy);
 }
 
 /* ==========================================================================

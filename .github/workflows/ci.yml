@@ -111,7 +111,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Render deploy
-        run: curl -s "${{ secrets.RENDER_BACKEND_DEPLOY_HOOK }}"
+        run: curl -sf "${{ secrets.RENDER_BACKEND_DEPLOY_HOOK }}"
 
   deploy-frontend:
     name: "Deploy · Frontend"
@@ -120,4 +120,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Render deploy
-        run: curl -s "${{ secrets.RENDER_FRONTEND_DEPLOY_HOOK }}"
+        run: curl -sf "${{ secrets.RENDER_FRONTEND_DEPLOY_HOOK }}"

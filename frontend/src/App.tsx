@@ -11,7 +11,7 @@ import {
   type GuidanceResponse,
   type PoseContextPayload,
 } from './backend/client'
-import './App.css'
+import { Button } from '@/components/ui/button'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? ''
 
@@ -101,15 +101,20 @@ function App() {
     : guidance?.guidance ?? targetTemplate.guidance
 
   return (
-    <div className="app-shell">
-      <header className="app-header">
-        <h1>frame-mog</h1>
-        <p className="subtitle">Live pose outline camera</p>
+    <div className="mx-auto flex min-h-screen max-w-[1280px] flex-col gap-4 p-6 text-slate-200">
+      <header className="flex items-baseline justify-between border-b border-slate-400/20 pb-2">
+        <h1 className="m-0 text-[1.75rem] tracking-tight">frame-mog</h1>
+        <p className="m-0 text-muted-foreground">Live pose outline camera</p>
       </header>
 
-      <main className="stage">
-        <div className="preview">
-          <video ref={videoRef} className="preview-video" playsInline muted />
+      <main className="grid flex-1 items-start gap-5 grid-cols-[minmax(0,2fr)_minmax(280px,1fr)] max-md:grid-cols-1">
+        <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-[#020617] shadow-[0_20px_60px_rgba(15,23,42,0.5)]">
+          <video
+            ref={videoRef}
+            className="h-full w-full -scale-x-100 bg-[#020617] object-cover"
+            playsInline
+            muted
+          />
           {cameraState.status === 'ready' && (
             <PoseOverlay
               videoRef={videoRef}
@@ -120,62 +125,73 @@ function App() {
             />
           )}
           {cameraState.status !== 'ready' && (
-            <div className="preview-cover">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[rgba(2,6,23,0.85)] p-6 text-center">
               {cameraState.status === 'idle' && (
                 <>
                   <p>We'll ask for camera access to show a live pose outline.</p>
-                  <button type="button" onClick={() => void requestCamera()}>
+                  <Button onClick={() => void requestCamera()}>
                     Enable camera
-                  </button>
+                  </Button>
                 </>
               )}
               {cameraState.status === 'requesting' && <p>Requesting camera…</p>}
               {cameraState.status === 'denied' && (
                 <>
-                  <p className="error">{cameraState.message}</p>
-                  <button type="button" onClick={() => void requestCamera()}>
+                  <p className="text-red-300">{cameraState.message}</p>
+                  <Button onClick={() => void requestCamera()}>
                     Retry
-                  </button>
+                  </Button>
                 </>
               )}
               {cameraState.status === 'unavailable' && (
-                <p className="error">{cameraState.message}</p>
+                <p className="text-red-300">{cameraState.message}</p>
               )}
               {cameraState.status === 'error' && (
                 <>
-                  <p className="error">Camera error: {cameraState.message}</p>
-                  <button type="button" onClick={() => void requestCamera()}>
+                  <p className="text-red-300">Camera error: {cameraState.message}</p>
+                  <Button onClick={() => void requestCamera()}>
                     Retry
-                  </button>
+                  </Button>
                 </>
               )}
             </div>
           )}
         </div>
 
-        <aside className="hud" aria-live="polite">
-          <div className="hud-row">
-            <span className="hud-label">Pose</span>
-            <span className="hud-value">{targetTemplate.name}</span>
+        <aside
+          className="flex flex-col gap-3.5 rounded-2xl border border-slate-400/20 bg-[rgba(15,23,42,0.7)] p-5 backdrop-blur-sm"
+          aria-live="polite"
+        >
+          <div className="flex items-baseline justify-between">
+            <span className="text-xs uppercase tracking-widest text-muted-foreground">
+              Pose
+            </span>
+            <span className="text-lg font-semibold">{targetTemplate.name}</span>
           </div>
-          <div className="hud-row">
-            <span className="hud-label">Confidence</span>
-            <span className="hud-value">{formatConfidence(displayedConfidence)}</span>
+          <div className="flex items-baseline justify-between">
+            <span className="text-xs uppercase tracking-widest text-muted-foreground">
+              Confidence
+            </span>
+            <span className="text-lg font-semibold">
+              {formatConfidence(displayedConfidence)}
+            </span>
           </div>
-          <p className="hud-guidance">{displayedGuidance}</p>
+          <p className="m-0 text-base leading-relaxed">{displayedGuidance}</p>
 
-          <div className="hud-controls">
-            <button
-              type="button"
+          <div>
+            <Button
+              variant="secondary"
               onClick={() => setPaused((p) => !p)}
               disabled={cameraState.status !== 'ready'}
             >
               {paused ? 'Resume live analysis' : 'Pause live analysis'}
-            </button>
+            </Button>
           </div>
 
           {landmarkerError && (
-            <p className="error small">Pose tracker: {landmarkerError}</p>
+            <p className="text-sm text-red-300">
+              Pose tracker: {landmarkerError}
+            </p>
           )}
         </aside>
       </main>

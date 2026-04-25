@@ -70,10 +70,9 @@ if [ ! -f "$MARKER" ]; then
     $GARAGE layout apply --version 1
 
     # Create API key and bucket
-    # Note: Garage v2.3.0 generates keys automatically; we import our predefined keys
-    $GARAGE key import generated-images-key \
-      --access-key "$GARAGE_S3_ACCESS_KEY_ID" \
-      --secret-key "$GARAGE_S3_SECRET_ACCESS_KEY"
+    # Garage v2.3.0 generates keys automatically
+    KEY_INFO=$($GARAGE key create generated-images-key)
+    echo "Created key: $KEY_INFO"
 
     $GARAGE bucket create generated-images
     $GARAGE bucket allow generated-images --read --write --key generated-images-key

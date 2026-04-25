@@ -16,6 +16,7 @@ from fastapi import UploadFile
 from openai import OpenAI
 
 from .schemas import PoseVariantJob, PoseVariantResult
+from .storage import delete_prefix, s3_enabled, upload_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +28,9 @@ GENERATED_ROOT = Path(
 )
 GENERATED_TTL_SECONDS = int(os.environ.get("GENERATED_TTL_SECONDS", str(6 * 60 * 60)))
 IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "gpt-image-1")
-IMAGE_SIZE = os.environ.get("IMAGE_SIZE", "1024x1536")
-IMAGE_QUALITY = os.environ.get("IMAGE_QUALITY", "medium")
-IMAGE_INPUT_FIDELITY = os.environ.get("IMAGE_INPUT_FIDELITY", "high")
+IMAGE_SIZE: str = os.environ.get("IMAGE_SIZE", "1024x1536")
+IMAGE_QUALITY: str = os.environ.get("IMAGE_QUALITY", "medium")
+IMAGE_INPUT_FIDELITY: str = os.environ.get("IMAGE_INPUT_FIDELITY", "high")
 
 SYSTEM_PROMPT = """\
 You are a pose-variation image generation assistant for a mobile camera coaching app.
@@ -133,6 +134,7 @@ POSE_VARIANTS: tuple[PoseVariantSpec, ...] = (
 _jobs: dict[str, PoseVariantJob] = {}
 _job_dirs: dict[str, Path] = {}
 _job_personalization: dict[str, str] = {}
+_job_timestamps: dict[str, float] = {}
 _lock = Lock()
 
 
@@ -160,18 +162,24 @@ def cleanup_old_jobs() -> None:
     with _lock:
         expired = [
             job_id
-            for job_id, path in _job_dirs.items()
-            if path.exists() and path.stat().st_mtime < cutoff
+            for job_id, job in _jobs.items()
+            if _job_timestamps.get(job_id, 0) < cutoff
         ]
 
     for job_id in expired:
         path = _job_dirs.get(job_id)
         if path:
             shutil.rmtree(path, ignore_errors=True)
+        if s3_enabled():
+            try:
+                delete_prefix(f"{job_id}/")
+            except Exception:  # noqa: BLE001
+                logger.warning("Failed to clean S3 prefix for job %s", job_id)
         with _lock:
             _jobs.pop(job_id, None)
             _job_dirs.pop(job_id, None)
             _job_personalization.pop(job_id, None)
+            _job_timestamps.pop(job_id, None)
 
 
 async def create_pose_variant_job(reference_image: UploadFile) -> PoseVariantJob:
@@ -199,6 +207,7 @@ async def create_pose_variant_job(reference_image: UploadFile) -> PoseVariantJob
     with _lock:
         _jobs[job_id] = job
         _job_dirs[job_id] = job_dir
+        _job_timestamps[job_id] = _now()
     return job
 
 
@@ -224,7 +233,9 @@ def _prompt_for_pose(spec: PoseVariantSpec) -> str:
     )
 
 
-def _prompt_for_pose_with_personalization(spec: PoseVariantSpec, personalization: str) -> str:
+def _prompt_for_pose_with_personalization(
+    spec: PoseVariantSpec, personalization: str
+) -> str:
     if not personalization:
         return _prompt_for_pose(spec)
     return (
@@ -251,9 +262,9 @@ def run_pose_variant_job(job_id: str) -> None:
                     model=IMAGE_MODEL,
                     image=image_file,
                     prompt=_prompt_for_pose_with_personalization(spec, personalization),
-                    size=IMAGE_SIZE,
-                    quality=IMAGE_QUALITY,
-                    input_fidelity=IMAGE_INPUT_FIDELITY,
+                    size=IMAGE_SIZE,  # ty: ignore[invalid-argument-type]
+                    quality=IMAGE_QUALITY,  # ty: ignore[invalid-argument-type]
+                    input_fidelity=IMAGE_INPUT_FIDELITY,  # ty: ignore[invalid-argument-type]
                     output_format="jpeg",
                 )
 
@@ -262,21 +273,29 @@ def run_pose_variant_job(job_id: str) -> None:
 
             image_bytes = base64.b64decode(response.data[0].b64_json)
             filename = f"{spec.id}.jpg"
-            (job_dir / filename).write_bytes(image_bytes)
+
+            if s3_enabled():
+                s3_key = f"{job_id}/{filename}"
+                image_url = upload_bytes(image_bytes, s3_key)
+            else:
+                (job_dir / filename).write_bytes(image_bytes)
+                image_url = f"/generated/{job_id}/{filename}"
 
             results.append(
                 PoseVariantResult(
                     id=spec.id,
                     title=spec.title,
                     instruction=spec.instruction,
-                    image_url=f"/generated/{job_id}/{filename}",
+                    image_url=image_url,
                     pose_template_id=spec.pose_template_id,
                     replaceable=False,
                 )
             )
             _update_job(job_id, progress=index, results=results.copy())
 
-        _update_job(job_id, status="ready", progress=len(POSE_VARIANTS), results=results)
+        _update_job(
+            job_id, status="ready", progress=len(POSE_VARIANTS), results=results
+        )
     except Exception as exc:  # noqa: BLE001 - generation provider failures are surfaced as job errors
         logger.exception("Pose variant job failed: %s", job_id)
         _update_job(job_id, status="failed", error=_safe_error(exc), results=results)

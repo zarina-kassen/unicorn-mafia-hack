@@ -34,6 +34,7 @@ from .schemas import (
     PoseVariantJob,
     TemplateMeta,
 )
+from .storage import s3_enabled
 from .templates import TEMPLATES
 
 load_dotenv()
@@ -60,12 +61,18 @@ def _summarize_landmarks(lm: list[Landmark]) -> str:
     if not lm:
         return "no landmarks"
     important = {
-        11: "L-shoulder", 12: "R-shoulder",
-        13: "L-elbow", 14: "R-elbow",
-        15: "L-wrist", 16: "R-wrist",
-        23: "L-hip", 24: "R-hip",
-        25: "L-knee", 26: "R-knee",
-        27: "L-ankle", 28: "R-ankle",
+        11: "L-shoulder",
+        12: "R-shoulder",
+        13: "L-elbow",
+        14: "R-elbow",
+        15: "L-wrist",
+        16: "R-wrist",
+        23: "L-hip",
+        24: "R-hip",
+        25: "L-knee",
+        26: "R-knee",
+        27: "L-ankle",
+        28: "R-ankle",
     }
     parts: list[str] = []
     for idx, name in important.items():
@@ -96,15 +103,17 @@ def get_agent() -> Agent[None, GuidanceResponse]:
     Lazy so importing this module doesn't require a gateway key — handy for
     tests and for the /api/templates endpoint which doesn't touch the model.
     """
-    return Agent(
+    return Agent(  # ty: ignore[invalid-return-type]  # output_type sets generic at runtime
         AGENT_MODEL,
         output_type=GuidanceResponse,
         system_prompt=SYSTEM_PROMPT,
     )
 
+
 app = FastAPI(title="frame-mog")
 GENERATED_ROOT.mkdir(parents=True, exist_ok=True)
-app.mount("/generated", StaticFiles(directory=GENERATED_ROOT), name="generated")
+if not s3_enabled():
+    app.mount("/generated", StaticFiles(directory=GENERATED_ROOT), name="generated")
 
 _allowed_origins = os.environ.get(
     "ALLOWED_ORIGINS",
@@ -147,7 +156,9 @@ async def create_pose_variants(
     reference_image: UploadFile = File(...),
     _user_id: str = Depends(require_auth),
 ) -> PoseVariantJob:
-    if not reference_image.content_type or not reference_image.content_type.startswith("image/"):
+    if not reference_image.content_type or not reference_image.content_type.startswith(
+        "image/"
+    ):
         raise HTTPException(status_code=400, detail="reference_image must be an image")
 
     job = await create_pose_variant_job(reference_image)
@@ -162,9 +173,21 @@ async def create_pose_variants(
                 {"id": "pose-03", "title": "Thoughtful", "prompt": "hand near chin"},
                 {"id": "pose-04", "title": "Look away", "prompt": "side look"},
                 {"id": "pose-05", "title": "Hands forward", "prompt": "hands forward"},
-                {"id": "pose-06", "title": "Angled cross", "prompt": "angled crossed arms"},
-                {"id": "pose-07", "title": "Hand on cheek", "prompt": "hand near cheek"},
-                {"id": "pose-08", "title": "Over shoulder", "prompt": "look over shoulder"},
+                {
+                    "id": "pose-06",
+                    "title": "Angled cross",
+                    "prompt": "angled crossed arms",
+                },
+                {
+                    "id": "pose-07",
+                    "title": "Hand on cheek",
+                    "prompt": "hand near cheek",
+                },
+                {
+                    "id": "pose-08",
+                    "title": "Over shoulder",
+                    "prompt": "look over shoulder",
+                },
                 {"id": "pose-09", "title": "Lean in", "prompt": "lean toward camera"},
                 {"id": "pose-10", "title": "Calm profile", "prompt": "calm profile"},
             ],

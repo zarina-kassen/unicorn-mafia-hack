@@ -72,9 +72,18 @@ class MubitMemory:
         haystack = context.lower()
 
         def score(item: dict[str, str]) -> int:
-            text = f'{item.get("title", "")} {item.get("prompt", "")}'.lower()
+            text = f"{item.get('title', '')} {item.get('prompt', '')}".lower()
             points = 0
-            for token in ("cross", "relax", "chin", "side", "profile", "lean", "confident", "natural"):
+            for token in (
+                "cross",
+                "relax",
+                "chin",
+                "side",
+                "profile",
+                "lean",
+                "confident",
+                "natural",
+            ):
                 if token in text and token in haystack:
                     points += 1
             return points
@@ -101,7 +110,9 @@ class MubitMemory:
                     metadata={"seed": True, "version": "v1"},
                 )
             except Exception:  # noqa: BLE001
-                logger.exception("Mubit remember onboarding failed for user=%s", user_id)
+                logger.exception(
+                    "Mubit remember onboarding failed for user=%s", user_id
+                )
 
     def remember_feedback(
         self,
@@ -174,9 +185,11 @@ class MubitMemory:
             )
             if hard_reset and hasattr(self._client, "forget"):
                 try:
-                    self._client.forget(session_id=user_id, query="*", limit=200)  # type: ignore[call-arg]
+                    self._client.forget(session_id=user_id)
                 except Exception:  # noqa: BLE001
-                    logger.exception("Mubit hard reset forget failed for user=%s", user_id)
+                    logger.exception(
+                        "Mubit hard reset forget failed for user=%s", user_id
+                    )
         except Exception:  # noqa: BLE001
             logger.exception("Mubit reset memory failed for user=%s", user_id)
 
@@ -184,10 +197,7 @@ class MubitMemory:
         if not hasattr(self._client, "reflect"):
             return
         try:
-            self._client.reflect(
-                session_id=user_id,
-                focus="Extract reusable pose/style lessons for future candidate generation.",
-            )  # type: ignore[call-arg]
+            self._client.reflect(session_id=user_id)
         except Exception:  # noqa: BLE001
             logger.exception("Mubit reflect failed for user=%s", user_id)
 

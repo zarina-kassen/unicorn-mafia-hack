@@ -270,21 +270,24 @@
    ========================================================================== */
 
 .stage-two-shell {
-  width: min(100%, 980px);
+  width: 100%;
+  max-width: none;
   min-height: 100dvh;
-  margin: 0 auto;
-  padding: max(var(--page-pad), env(safe-area-inset-top, 0px))
-    var(--page-pad) max(18px, env(safe-area-inset-bottom, 0px));
+  min-height: 100svh;
+  margin: 0;
+  padding: 0;
 }
 
 .camera-preview {
   position: relative;
-  height: clamp(390px, 60dvh, 690px);
+  width: 100%;
+  min-height: 100dvh;
+  min-height: 100svh;
   overflow: hidden;
-  border: 1px solid var(--cam-hairline);
-  border-radius: 34px;
+  border: none;
+  border-radius: 0;
   background: var(--cam-surface);
-  box-shadow: var(--shadow-cam-preview);
+  box-shadow: none;
   isolation: isolate;
 }
 
@@ -447,11 +450,19 @@
     grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
     align-items: stretch;
     gap: 18px;
-    padding-top: max(28px, env(safe-area-inset-top, 0px));
+    width: min(100%, 980px);
+    max-width: 980px;
+    margin: 0 auto;
+    padding: max(28px, env(safe-area-inset-top, 0px)) var(--page-pad)
+      max(18px, env(safe-area-inset-bottom, 0px));
   }
 
   .camera-preview {
     height: min(78dvh, 760px);
+    min-height: min(78dvh, 760px);
+    border: 1px solid var(--cam-hairline);
+    border-radius: 34px;
+    box-shadow: var(--shadow-cam-preview);
   }
 
   .pose-gallery {

@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 
 import { useCamera } from './camera/useCamera'
 import type { NormalizedLandmark } from './pose/mediapipe'
@@ -15,7 +22,13 @@ import { Button } from '@/components/ui/button'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? ''
 
+<<<<<<< Updated upstream
 type AlignmentStatus = 'finding' | 'adjusting' | 'close'
+=======
+/** Visible strip when the pose gallery sheet is collapsed (px). */
+const GALLERY_SHEET_PEEK_PX = 80
+
+>>>>>>> Stashed changes
 type GenerationStatus = 'idle' | 'capturing' | 'generating' | 'ready' | 'failed'
 
 interface AlignmentState {
@@ -88,7 +101,31 @@ function App() {
   const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 6 })
   const [generationError, setGenerationError] = useState<string | null>(null)
 
+<<<<<<< Updated upstream
   const landmarkerEnabled = cameraState.status === 'ready'
+=======
+  const gallerySheetRef = useRef<HTMLElement>(null)
+  const galleryMaxYRef = useRef(0)
+  const gallerySheetYRef = useRef(0)
+  const galleryDragRef = useRef<{
+    pointerId: number
+    startClientY: number
+    startTranslate: number
+  } | null>(null)
+  const [gallerySheetY, setGallerySheetY] = useState(0)
+  const [gallerySheetMaxY, setGallerySheetMaxY] = useState(0)
+  const [gallerySheetDragging, setGallerySheetDragging] = useState(false)
+
+  useEffect(() => {
+    gallerySheetYRef.current = gallerySheetY
+  }, [gallerySheetY])
+
+  const galleryPosesRef = useRef<GalleryPose[]>([])
+  useEffect(() => {
+    galleryPosesRef.current = galleryPoses
+  }, [galleryPoses])
+
+>>>>>>> Stashed changes
   const selectedPose = useMemo(
     () => galleryPoses.find((pose) => pose.id === selectedPoseId) ?? galleryPoses[0],
     [galleryPoses, selectedPoseId],
@@ -126,6 +163,35 @@ function App() {
   const galleryBusy = generationStatus === 'capturing' || generationStatus === 'generating'
   const hasGeneratedGallery = generationStatus === 'ready'
 
+  const galleryVisible =
+    cameraState.status === 'ready' &&
+    (galleryBusy || galleryPoses.length > 0 || generationError)
+
+  const measureGallerySheet = useCallback(() => {
+    const el = gallerySheetRef.current
+    if (!el) return
+    const h = el.getBoundingClientRect().height
+    const maxY = Math.max(0, h - GALLERY_SHEET_PEEK_PX)
+    galleryMaxYRef.current = maxY
+    setGallerySheetMaxY(maxY)
+    setGallerySheetY((y) => (maxY > 0 ? Math.min(y, maxY) : 0))
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!galleryVisible) {
+      setGallerySheetY(0)
+      galleryMaxYRef.current = 0
+      setGallerySheetMaxY(0)
+      return
+    }
+    measureGallerySheet()
+    const el = gallerySheetRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => measureGallerySheet())
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [galleryVisible, measureGallerySheet, galleryPoses.length, galleryBusy, generationError])
+
   const handleGeneratePoses = useCallback(async () => {
     if (cameraState.status !== 'ready' || !videoRef.current || galleryBusy) return
 
@@ -154,36 +220,64 @@ function App() {
     const unsubscribe = subscribePoseVariantJob(
       generationJobId,
       (event) => {
-        setGenerationProgress({ current: event.job.progress, total: event.job.total })
+        try {
+          setGenerationProgress({ current: event.job.progress, total: event.job.total })
 
-        if (event.job.results.length > 0) {
-          const generated = event.job.results.map(galleryPoseFromResult)
-          setGalleryPoses(generated)
-          setSelectedPoseId((previous) =>
-            generated.some((pose) => pose.id === previous) ? previous : generated[0]?.id ?? previous,
-          )
-        }
+          if (event.job.results.length > 0) {
+            const generated = event.job.results.map(galleryPoseFromResult)
+            setGalleryPoses(generated)
+            setSelectedPoseId((previous) =>
+              generated.some((pose) => pose.id === previous) ? previous : generated[0]?.id ?? previous,
+            )
+          }
 
-        if (event.job.status === 'ready') {
-          setGenerationStatus('ready')
-          setGenerationJobId(null)
-          return
-        }
+          if (event.job.status === 'ready') {
+            setGenerationStatus('ready')
+            setGenerationJobId(null)
+            return
+          }
 
+<<<<<<< Updated upstream
         if (event.job.status === 'failed') {
           setGalleryPoses(GALLERY_POSES)
           setSelectedPoseId(GALLERY_POSES[0].id)
+=======
+          if (event.job.status === 'failed') {
+            setGalleryPoses([])
+            setSelectedPoseId(null)
+            setGenerationStatus('failed')
+            setGenerationJobId(null)
+            setGenerationError(event.job.error ?? 'Pose generation failed.')
+          }
+        } catch (err) {
+          console.error('[pose variants] event handler', err)
+>>>>>>> Stashed changes
           setGenerationStatus('failed')
           setGenerationJobId(null)
-          setGenerationError(event.job.error ?? 'Pose generation failed.')
+          setGenerationError(err instanceof Error ? err.message : 'Could not update gallery.')
         }
       },
       () => {
+<<<<<<< Updated upstream
         setGalleryPoses(GALLERY_POSES)
         setSelectedPoseId(GALLERY_POSES[0].id)
-        setGenerationStatus('failed')
+=======
         setGenerationJobId(null)
-        setGenerationError(null)
+        const poses = galleryPosesRef.current
+        if (poses.length > 0) {
+          setGenerationStatus('ready')
+          setGenerationError(
+            'Live connection dropped, but your photos below are still available. Tap Regenerate anytime to run again.',
+          )
+          return
+        }
+        setGalleryPoses([])
+        setSelectedPoseId(null)
+>>>>>>> Stashed changes
+        setGenerationStatus('failed')
+        setGenerationError(
+          'Live updates disconnected before any photos arrived. Check your connection and tap Generate.',
+        )
       },
       BACKEND_URL,
     )
@@ -211,8 +305,69 @@ function App() {
           ? 'Regenerate'
           : 'Generate'
 
+  const collapseGallerySheet = useCallback(() => {
+    const maxY = galleryMaxYRef.current
+    if (maxY > 0) setGallerySheetY(maxY)
+  }, [])
+
+  const onGallerySheetPointerDown = useCallback((event: React.PointerEvent) => {
+    if (event.button !== 0) return
+    galleryDragRef.current = {
+      pointerId: event.pointerId,
+      startClientY: event.clientY,
+      startTranslate: gallerySheetYRef.current,
+    }
+    setGallerySheetDragging(true)
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }, [])
+
+  const onGallerySheetPointerMove = useCallback((event: React.PointerEvent) => {
+    const drag = galleryDragRef.current
+    if (!drag || event.pointerId !== drag.pointerId) return
+    const maxY = galleryMaxYRef.current
+    if (maxY <= 0) return
+    const dy = event.clientY - drag.startClientY
+    const next = Math.min(Math.max(0, drag.startTranslate + dy), maxY)
+    setGallerySheetY(next)
+  }, [])
+
+  const onGallerySheetPointerUp = useCallback((event: React.PointerEvent) => {
+    const drag = galleryDragRef.current
+    if (!drag || event.pointerId !== drag.pointerId) return
+    const totalDy = event.clientY - drag.startClientY
+    galleryDragRef.current = null
+    setGallerySheetDragging(false)
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    } catch {
+      // ignore if already released
+    }
+
+    setGallerySheetY((prev) => {
+      const maxY = galleryMaxYRef.current
+      if (maxY <= 0) return 0
+      if (Math.abs(totalDy) < 10) {
+        if (prev > maxY * 0.88) return 0
+        return prev
+      }
+      return prev > maxY / 2 ? maxY : 0
+    })
+  }, [])
+
+  const onGallerySheetPointerCancel = useCallback((event: React.PointerEvent) => {
+    const drag = galleryDragRef.current
+    if (!drag || event.pointerId !== drag.pointerId) return
+    galleryDragRef.current = null
+    setGallerySheetDragging(false)
+    setGallerySheetY((prev) => {
+      const maxY = galleryMaxYRef.current
+      if (maxY <= 0) return 0
+      return prev > maxY / 2 ? maxY : 0
+    })
+  }, [])
+
   return (
-    <div className="min-h-screen min-h-dvh overflow-x-hidden">
+    <div className="min-h-screen min-h-dvh w-full max-w-none overflow-x-hidden">
       <main className="stage-two-shell">
         <section className="camera-preview" data-camera-state={cameraState.status}>
           <video
@@ -279,6 +434,7 @@ function App() {
                 <span />
               </button>
 
+<<<<<<< Updated upstream
               <section className="pose-gallery" aria-label="Generated pose gallery">
                 <div className="gallery-heading">
                   <button className="gallery-nav" type="button" aria-label="Previous">
@@ -293,6 +449,51 @@ function App() {
                   </button>
                 </div>
                 {generationError && <p className="gallery-error">{generationError}</p>}
+=======
+              {galleryVisible && (
+                <section
+                  ref={gallerySheetRef}
+                  className={
+                    gallerySheetDragging ? 'pose-gallery is-dragging' : 'pose-gallery'
+                  }
+                  aria-label="Generated pose gallery"
+                  style={{ transform: `translateY(${gallerySheetY}px)` }}
+                  aria-expanded={gallerySheetMaxY <= 0 ? true : gallerySheetY < gallerySheetMaxY * 0.5}
+                >
+                  <div
+                    className="gallery-sheet-chrome"
+                    onPointerDown={onGallerySheetPointerDown}
+                    onPointerMove={onGallerySheetPointerMove}
+                    onPointerUp={onGallerySheetPointerUp}
+                    onPointerCancel={onGallerySheetPointerCancel}
+                  >
+                    <div className="gallery-sheet-handle" aria-hidden="true" />
+                    <div className="gallery-heading">
+                      <button
+                        className="gallery-nav"
+                        type="button"
+                        aria-label="Previous pose"
+                        onPointerDown={(e) => e.stopPropagation()}
+                      >
+                        ‹
+                      </button>
+                      <div>
+                        <p>{galleryBusy ? 'AI POSE RECOMMENDATIONS' : 'POSE RECOMMENDATIONS'}</p>
+                        <h2>{galleryBusy ? 'Generating…' : selectedPose.title}</h2>
+                      </div>
+                      <button
+                        className="gallery-nav"
+                        type="button"
+                        aria-label="Collapse pose gallery"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={collapseGallerySheet}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    {generationError && <p className="gallery-error">{generationError}</p>}
+                  </div>
+>>>>>>> Stashed changes
 
                 <div className="gallery-rail">
                   <div className="gallery-track">

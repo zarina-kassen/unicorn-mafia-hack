@@ -461,7 +461,9 @@ async def stream_pose_variants_events(job_id: str) -> StreamingResponse:
             if is_done and state_now and state_now.events.empty():
                 break
             try:
-                message = await asyncio.wait_for(state_now.events.get(), timeout=12.0)
+                # Keep this below typical proxy idle limits (~10s) so the SSE
+                # stream stays open through ngrok and similar tunnels.
+                message = await asyncio.wait_for(state_now.events.get(), timeout=8.0)
                 yield message
             except TimeoutError:
                 yield ": keepalive\n\n"

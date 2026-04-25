@@ -242,7 +242,6 @@ function App() {
                   <span className={`alignment-pill ${alignment.status}`}>
                     {alignmentCopy}
                   </span>
-<<<<<<< HEAD
                   <Button
                     className="generate-button"
                     type="button"
@@ -267,20 +266,7 @@ function App() {
                     Pose tracker: {landmarkerError}
                   </small>
                 )}
-                {seedMessage && <small>{seedMessage}</small>}
-=======
-                  <span className="progress-pill">{generationProgress.current}/{generationProgress.total}</span>
-                </div>
-                <div className="camera-icons" aria-hidden="true">
-                  <span>⚡</span>
-                  <span>◎</span>
-                </div>
-              </div>
 
-              <div className="camera-bottom-hint" aria-live="polite">
-                <span>{selectedPose.instruction}</span>
-                {landmarkerError && <small>Pose tracker: {landmarkerError}</small>}
->>>>>>> a72007a (c)
               </div>
 
               <button
@@ -359,7 +345,6 @@ function App() {
           {cameraState.status !== 'ready' && (
             <div className="camera-launch">
               <div className="launch-mark" aria-hidden="true" />
-<<<<<<< HEAD
               <p className="mt-2 -mb-1.5 text-[0.72rem] font-black uppercase tracking-[0.14em] text-cam-accent">
                 Mobile pose camera
               </p>
@@ -367,17 +352,6 @@ function App() {
                 Line up before the shot.
               </h1>
               <p className={`m-0 max-w-[300px] text-[0.98rem] leading-[1.45] ${cameraState.status === 'idle' || cameraState.status === 'requesting' ? 'text-cam-ink-muted' : 'text-cam-error'}`}>
-=======
-              <p className="launch-kicker">Mobile pose camera</p>
-              <h1>Line up before the shot.</h1>
-              <p
-                className={
-                  cameraState.status === 'idle' || cameraState.status === 'requesting'
-                    ? ''
-                    : 'error'
-                }
-              >
->>>>>>> a72007a (c)
                 {launchMessage}
               </p>
               {cameraState.status !== 'requesting' &&
@@ -393,7 +367,6 @@ function App() {
             </div>
           )}
         </section>
-<<<<<<< HEAD
 
         <section className="pose-gallery" aria-label="Generated pose gallery">
           <div className="flex items-end justify-between gap-3.5 px-4 pb-[13px]">
@@ -424,45 +397,6 @@ function App() {
           )}
 
           <div className="gallery-rail">
-            <div className="memory-seed-row">
-              <label className="generate-button" style={{ cursor: 'pointer' }}>
-                Seed taste (up to 5 photos)
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={(event) => void handleSeedImages(event)}
-                  style={{ display: 'none' }}
-                />
-              </label>
-              {seedStatus === 'uploading' && <span>Seeding memory...</span>}
-            </div>
-            <div className="memory-controls-row">
-              <button
-                className="generate-button"
-                type="button"
-                onClick={() => void handlePreferences(true, false, false)}
-              >
-                Camera-roll only
-              </button>
-              <button
-                className="generate-button"
-                type="button"
-                onClick={() => void handlePreferences(true, true, true)}
-              >
-                Enable all sources
-              </button>
-              <button
-                className="generate-button"
-                type="button"
-                onClick={() => void handleResetMemory(false)}
-              >
-                Soft reset memory
-              </button>
-            </div>
-            {privacyStatus && (
-              <div className="memory-status">{privacyStatus}</div>
-            )}
             <div className="gallery-track">
               {galleryBusy &&
                 Array.from({ length: 10 }).map((_, index) => (
@@ -478,19 +412,7 @@ function App() {
                     className={active ? 'pose-card active' : 'pose-card'}
                     type="button"
                     key={`${pose.id}-${index}`}
-                    onClick={() => {
-                      setSelectedPoseId(pose.id)
-                      void postMemoryFeedback(
-                        {
-                          event: 'candidate_selected',
-                          pose_template_id: pose.template.id,
-                          scene_tags: ['camera_live', 'gallery_choice'],
-                          outcome_score: active ? 0.5 : 0.75,
-                        },
-                        BACKEND_URL,
-                        getToken,
-                      )
-                    }}
+                    onClick={() => setSelectedPoseId(pose.id)}
                     aria-pressed={active}
                   >
                     <img src={pose.imageSrc} alt={pose.title} />
@@ -501,8 +423,6 @@ function App() {
             </div>
           </div>
         </section>
-=======
->>>>>>> a72007a (c)
       </main>
     </div>
   )

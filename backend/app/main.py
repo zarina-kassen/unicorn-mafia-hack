@@ -13,15 +13,23 @@ from fastapi.staticfiles import StaticFiles
 from pydantic_ai import Agent
 
 from .auth import require_auth
+from .mubit_memory import get_mubit_memory
 from .pose_variants import (
     GENERATED_ROOT,
     create_pose_variant_job,
     get_pose_variant_job,
+    reorder_pose_variants,
     run_pose_variant_job,
+    set_pose_variant_personalization,
 )
 from .schemas import (
     GuidanceResponse,
     Landmark,
+    MemoryFeedbackRequest,
+    MemoryOnboardingRequest,
+    MemoryPreferencesRequest,
+    MemoryResetRequest,
+    MemoryStatusResponse,
     PoseContext,
     PoseVariantJob,
     TemplateMeta,
@@ -144,6 +152,7 @@ async def guidance(
 async def create_pose_variants(
     background_tasks: BackgroundTasks,
     reference_image: UploadFile = File(...),
+    _user_id: str = Depends(require_auth),
 ) -> PoseVariantJob:
     if not reference_image.content_type or not reference_image.content_type.startswith(
         "image/"
@@ -151,6 +160,43 @@ async def create_pose_variants(
         raise HTTPException(status_code=400, detail="reference_image must be an image")
 
     job = await create_pose_variant_job(reference_image)
+    memory = get_mubit_memory()
+    if memory:
+        order = memory.rank_pose_candidates(
+            user_id=_user_id,
+            scene_tags=["camera_live", "pose_variants"],
+            candidates=[
+                {"id": "pose-01", "title": "Crossed arms", "prompt": "arms crossed"},
+                {"id": "pose-02", "title": "Relaxed turn", "prompt": "relaxed turn"},
+                {"id": "pose-03", "title": "Thoughtful", "prompt": "hand near chin"},
+                {"id": "pose-04", "title": "Look away", "prompt": "side look"},
+                {"id": "pose-05", "title": "Hands forward", "prompt": "hands forward"},
+                {
+                    "id": "pose-06",
+                    "title": "Angled cross",
+                    "prompt": "angled crossed arms",
+                },
+                {
+                    "id": "pose-07",
+                    "title": "Hand on cheek",
+                    "prompt": "hand near cheek",
+                },
+                {
+                    "id": "pose-08",
+                    "title": "Over shoulder",
+                    "prompt": "look over shoulder",
+                },
+                {"id": "pose-09", "title": "Lean in", "prompt": "lean toward camera"},
+                {"id": "pose-10", "title": "Calm profile", "prompt": "calm profile"},
+            ],
+        )
+        reorder_pose_variants(order)
+        personalization = memory.get_personalization_block(
+            user_id=_user_id,
+            scene_tags=["camera_live", "pose_variants"],
+        )
+        if personalization:
+            set_pose_variant_personalization(job.job_id, personalization)
     background_tasks.add_task(run_pose_variant_job, job.job_id)
     return job
 
@@ -161,3 +207,65 @@ def get_pose_variants(job_id: str) -> PoseVariantJob:
     if not job:
         raise HTTPException(status_code=404, detail="pose variant job not found")
     return job
+
+
+@app.post("/api/memory/onboarding", response_model=MemoryStatusResponse)
+def seed_memory_onboarding(
+    payload: MemoryOnboardingRequest,
+    user_id: str = Depends(require_auth),
+) -> MemoryStatusResponse:
+    memory = get_mubit_memory()
+    if not memory:
+        return MemoryStatusResponse(ok=False)
+    memory.remember_onboarding_seed(
+        user_id=user_id,
+        entries=[entry.model_dump() for entry in payload.entries],
+    )
+    return MemoryStatusResponse(ok=True)
+
+
+@app.post("/api/memory/feedback", response_model=MemoryStatusResponse)
+def record_memory_feedback(
+    payload: MemoryFeedbackRequest,
+    user_id: str = Depends(require_auth),
+) -> MemoryStatusResponse:
+    memory = get_mubit_memory()
+    if not memory:
+        return MemoryStatusResponse(ok=False)
+    memory.remember_feedback(
+        user_id=user_id,
+        event=payload.event,
+        pose_template_id=payload.pose_template_id,
+        scene_tags=payload.scene_tags,
+        outcome_score=payload.outcome_score,
+    )
+    return MemoryStatusResponse(ok=True)
+
+
+@app.post("/api/memory/preferences", response_model=MemoryStatusResponse)
+def set_memory_preferences(
+    payload: MemoryPreferencesRequest,
+    user_id: str = Depends(require_auth),
+) -> MemoryStatusResponse:
+    memory = get_mubit_memory()
+    if not memory:
+        return MemoryStatusResponse(ok=False)
+    memory.remember_preferences(
+        user_id=user_id,
+        allow_camera_roll=payload.allow_camera_roll,
+        allow_instagram=payload.allow_instagram,
+        allow_pinterest=payload.allow_pinterest,
+    )
+    return MemoryStatusResponse(ok=True)
+
+
+@app.post("/api/memory/reset", response_model=MemoryStatusResponse)
+def reset_memory_profile(
+    payload: MemoryResetRequest,
+    user_id: str = Depends(require_auth),
+) -> MemoryStatusResponse:
+    memory = get_mubit_memory()
+    if not memory:
+        return MemoryStatusResponse(ok=False)
+    memory.reset_user_memory(user_id=user_id, hard_reset=payload.hard_reset)
+    return MemoryStatusResponse(ok=True)

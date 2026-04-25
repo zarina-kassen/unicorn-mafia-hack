@@ -7,11 +7,12 @@ import os
 from functools import lru_cache
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic_ai import Agent
 
+from .auth import require_auth
 from .pose_variants import (
     GENERATED_ROOT,
     create_pose_variant_job,
@@ -116,12 +117,14 @@ def health() -> dict[str, str]:
 
 
 @app.get("/api/templates", response_model=list[TemplateMeta])
-def list_templates() -> list[TemplateMeta]:
+def list_templates(_user_id: str = Depends(require_auth)) -> list[TemplateMeta]:
     return TEMPLATES
 
 
 @app.post("/api/guidance", response_model=GuidanceResponse)
-async def guidance(ctx: PoseContext) -> GuidanceResponse:
+async def guidance(
+    ctx: PoseContext, _user_id: str = Depends(require_auth)
+) -> GuidanceResponse:
     try:
         result = await get_agent().run(_render_prompt(ctx))
     except Exception as exc:  # noqa: BLE001 — surface all provider errors uniformly

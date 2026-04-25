@@ -1,6 +1,6 @@
 # frame-mog — live pose outline camera
 
-A Huawei-style camera web app: open it in Chrome, grant camera access, and a
+A smart camera web app: open it in Chrome, grant camera access, and a
 live pose-outline overlay appears on top of your webcam preview so you can
 adjust your posture **before** pressing the shutter. No "Take photo" step is
 needed for the outline to show up — the experience is fully live.

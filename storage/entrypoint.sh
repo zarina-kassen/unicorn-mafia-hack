@@ -42,7 +42,7 @@ GARAGE_PID=$!
 
 # Wait for admin API to be ready
 echo "Waiting for Garage to start..."
-for i in $(seq 1 30); do
+for i in $(seq 1 60); do
   if $GARAGE status 2>/dev/null | grep -q "ID"; then
     echo "Garage is ready."
     break
@@ -54,9 +54,18 @@ done
 if [ ! -f "$MARKER" ]; then
   echo "Initializing Garage cluster..."
 
-  # Get node ID and assign layout
-  NODE_ID=$($GARAGE status 2>/dev/null | grep -oE '[0-9a-f]{16}' | head -1)
+  # Get node ID and assign layout (try multiple methods)
+  NODE_ID=""
+  for i in $(seq 1 10); do
+    NODE_ID=$($GARAGE status 2>/dev/null | grep -oE '[0-9a-f]{16}' | head -1)
+    if [ -n "$NODE_ID" ]; then
+      break
+    fi
+    sleep 1
+  done
+
   if [ -n "$NODE_ID" ]; then
+    echo "Found node ID: $NODE_ID"
     $GARAGE layout assign "$NODE_ID" -z dc1 -c 1G -t node1
     $GARAGE layout apply --version 1
 

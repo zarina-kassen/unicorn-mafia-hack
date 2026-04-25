@@ -387,7 +387,7 @@ function App() {
             <span className="text-[0.82rem] font-black text-cam-accent">
               {galleryBusy
                 ? `${generationProgress.current}/${generationProgress.total}`
-                : `${String(galleryPoses.findIndex((pose) => pose.id === selectedPose.id) + 1).padStart(2, '0')} / 10`}
+                : `${String(galleryPoses.findIndex((pose) => pose.id === selectedPose.id) + 1).padStart(2, '0')} / ${galleryPoses.length}`}
             </span>
           </div>
           {generationError && (
@@ -399,7 +399,7 @@ function App() {
           <div className="gallery-rail">
             <div className="gallery-track">
               {galleryBusy &&
-                Array.from({ length: 10 }).map((_, index) => (
+                Array.from({ length: Math.max(0, generationProgress.total - galleryPoses.length) }).map((_, index) => (
                   <div className="pose-card skeleton" key={index}>
                     <span />
                   </div>

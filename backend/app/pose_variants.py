@@ -58,7 +58,11 @@ async def _store_base64_image(b64_or_url: str, job_id: str) -> str:
 
 
 async def _generate_and_store_image(
-    target: PoseTargetSpec, slot_index: int, client: AsyncOpenAI, job_id: str
+    target: PoseTargetSpec,
+    slot_index: int,
+    client: AsyncOpenAI,
+    job_id: str,
+    reference_image_data_url: str,
 ) -> PoseVariantResult | None:
     """Generate and store an image for a single target."""
     target_id = f"target-{uuid4().hex[:8]}-{slot_index + 1:02d}"
@@ -68,10 +72,14 @@ async def _generate_and_store_image(
     )
 
     try:
-        # Use OpenRouter chat completions for image generation
+        # Use OpenRouter chat completions for image generation with reference image
+        message_content = [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": reference_image_data_url}},
+        ]
         response = await client.chat.completions.create(
             model=settings.image_model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=cast(list, [{"role": "user", "content": message_content}]),
         )
 
         # Extract image from response - OpenRouter returns images in message.images
@@ -145,7 +153,9 @@ async def create_pose_variants(
     # Generate images in parallel
     job_id = uuid4().hex[:8]
     tasks = [
-        _generate_and_store_image(target, slot_index, client, job_id)
+        _generate_and_store_image(
+            target, slot_index, client, job_id, reference_image_data_url
+        )
         for slot_index, target in enumerate(target_specs)
     ]
     processed_results = await asyncio.gather(*tasks, return_exceptions=True)

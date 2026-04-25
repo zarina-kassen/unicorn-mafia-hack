@@ -1,9 +1,9 @@
+import { useAuth } from '@clerk/react'
 import { useMutation } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef } from 'react'
-import type { GuidanceResponse, PoseContextPayload } from '../backend/client'
-import { useAuthFetch } from './useAuthFetch'
+import { GuidanceClient } from '../api/guidance'
+import type { GuidanceResponse, PoseContextPayload } from '../api/types'
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? ''
 const THROTTLE_MS = 1500
 const TIMEOUT_MS = 3000
 
@@ -17,7 +17,8 @@ const TIMEOUT_MS = 3000
  * - Timers are cleaned up on unmount.
  */
 export function useGuidance() {
-  const authFetch = useAuthFetch()
+  const { getToken } = useAuth()
+  const clientRef = useRef(new GuidanceClient(getToken))
   const lastSendRef = useRef(0)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingRef = useRef<PoseContextPayload | null>(null)
@@ -34,14 +35,7 @@ export function useGuidance() {
       inflightRef.current = controller
       const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS)
       try {
-        const res = await authFetch(`${BACKEND_URL}/api/guidance`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(ctx),
-          signal: controller.signal,
-        })
-        if (!res.ok) throw new Error(`guidance ${res.status}`)
-        return res.json() as Promise<GuidanceResponse>
+        return await clientRef.current.postGuidance(ctx, controller.signal)
       } finally {
         clearTimeout(timeoutId)
         if (inflightRef.current === controller) inflightRef.current = null

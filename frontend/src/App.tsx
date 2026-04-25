@@ -13,7 +13,7 @@ import { TEMPLATES, getTemplate, type PoseTemplate } from './pose/templates'
 import { matchTemplate } from './pose/matcher'
 import { PoseOverlay } from './overlay/PoseOverlay'
 import { useGuidance } from './hooks/useGuidance'
-import type { PoseContextPayload } from './backend/client'
+import type { PoseContextPayload } from './api/types'
 import './App.css'
 
 function formatConfidence(score: number): string {

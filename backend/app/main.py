@@ -34,6 +34,7 @@ from .schemas import (
     PoseVariantJob,
     TemplateMeta,
 )
+from .storage import s3_enabled
 from .templates import TEMPLATES
 
 load_dotenv()
@@ -102,7 +103,7 @@ def get_agent() -> Agent[None, GuidanceResponse]:
     Lazy so importing this module doesn't require a gateway key — handy for
     tests and for the /api/templates endpoint which doesn't touch the model.
     """
-    return Agent(  # type: ignore[return-value, ty:invalid-return-type]
+    return Agent(  # ty: ignore[invalid-return-type]  # output_type sets generic at runtime
         AGENT_MODEL,
         output_type=GuidanceResponse,
         system_prompt=SYSTEM_PROMPT,
@@ -111,7 +112,8 @@ def get_agent() -> Agent[None, GuidanceResponse]:
 
 app = FastAPI(title="frame-mog")
 GENERATED_ROOT.mkdir(parents=True, exist_ok=True)
-app.mount("/generated", StaticFiles(directory=GENERATED_ROOT), name="generated")
+if not s3_enabled():
+    app.mount("/generated", StaticFiles(directory=GENERATED_ROOT), name="generated")
 
 _allowed_origins = os.environ.get(
     "ALLOWED_ORIGINS",

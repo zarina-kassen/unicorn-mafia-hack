@@ -39,6 +39,9 @@ jobs:
       - name: Ruff format check
         run: uvx ruff format --check .
 
+      - name: Type check (ty)
+        run: uvx ty check --output-format github .
+
   backend-test:
     name: "Backend · Test"
     runs-on: ubuntu-latest

@@ -86,7 +86,7 @@ button {
   z-index: 2;
   display: flex;
   align-items: center;
-  justify-content: space-between;  
+  justify-content: flex-end;
   gap: 8px;
   text-shadow: 0 2px 14px rgba(0, 0, 0, 0.82);
 }
@@ -170,7 +170,7 @@ button {
   position: absolute;
   z-index: 3;
   left: 50%;
-  bottom: 198px;
+  bottom: 170px;
   width: 72px;
   height: 72px;
   margin-left: -36px;
@@ -199,7 +199,7 @@ button {
   position: absolute;
   left: 14px;
   right: 14px;
-  bottom: 270px;
+  bottom: 230px;
   z-index: 2;
   display: flex;
   flex-direction: column;
@@ -311,8 +311,8 @@ button {
   bottom: 8px;
   z-index: 3;
   border: 1px solid var(--camera-hairline);
-  border-radius: 22px;
-  padding: 12px 0 14px;
+  border-radius: 18px;
+  padding: 9px 0 10px;
   background: linear-gradient(180deg, rgba(33, 38, 48, 0.92), rgba(12, 14, 20, 0.92));
   box-shadow: 0 14px 44px rgba(0, 0, 0, 0.46);
   overflow: hidden;
@@ -324,7 +324,7 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 0 12px 10px;
+  padding: 0 10px 7px;
 }
 
 .gallery-heading p,
@@ -334,7 +334,7 @@ button {
 
 .gallery-heading p {
   color: var(--camera-muted);
-  font-size: 0.62rem;
+  font-size: 0.55rem;
   font-weight: 900;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -342,19 +342,19 @@ button {
 
 .gallery-heading h2 {
   margin-top: 3px;
-  font-size: clamp(1rem, 3.6vw, 1.16rem);
+  font-size: clamp(0.86rem, 3.1vw, 1rem);
   line-height: 1.1;
   letter-spacing: -0.015em;
 }
 
 .gallery-nav {
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 50%;
   color: rgba(255, 255, 255, 0.82);
   background: rgba(255, 255, 255, 0.06);
-  font-size: 0.94rem;
+  font-size: 0.78rem;
   cursor: default;
 }
 
@@ -380,14 +380,14 @@ button {
 .gallery-track {
   display: flex;
   width: max-content;
-  gap: 8px;
-  padding: 0 12px;
+  gap: 6px;
+  padding: 0 10px;
 }
 
 .pose-card {
-  width: clamp(102px, 30vw, 132px);
+  width: clamp(76px, 22vw, 98px);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 16px;
+  border-radius: 12px;
   padding: 0;
   color: var(--camera-ink);
   background: rgba(255, 255, 255, 0.04);
@@ -407,7 +407,7 @@ button {
 
 .pose-card.skeleton {
   position: relative;
-  height: calc(clamp(102px, 30vw, 132px) * 1.58);
+  height: calc(clamp(76px, 22vw, 98px) * 1.58);
   cursor: default;
   overflow: hidden;
 }
@@ -442,9 +442,9 @@ button {
 
 .pose-card span {
   display: block;
-  padding: 8px 8px 10px;
+  padding: 6px 6px 7px;
   color: rgba(255, 255, 255, 0.88);
-  font-size: 0.72rem;
+  font-size: 0.62rem;
   font-weight: 850;
   line-height: 1.12;
 }
@@ -461,10 +461,10 @@ button {
 
 @media (max-width: 390px) {
   .camera-bottom-hint {
-    bottom: 250px;
+    bottom: 210px;
   }
 
   .shutter-button {
-    bottom: 180px;
+    bottom: 155px;
   }
 }

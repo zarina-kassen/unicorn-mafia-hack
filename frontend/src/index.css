@@ -5,10 +5,16 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ==========================================================================
+   Design System — Tailwind Theme Tokens
+   ========================================================================== */
+
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: 'Geist Variable', ui-rounded, 'SF Pro Rounded', 'Avenir Next',
       'Helvetica Neue', sans-serif;
+
+    /* ---- shadcn color tokens ---- */
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -40,6 +46,36 @@
     --color-card: var(--card);
     --color-foreground: var(--foreground);
     --color-background: var(--background);
+
+    /* ---- Camera design system tokens ---- */
+    --color-cam-surface: var(--cam-surface);
+    --color-cam-ink: var(--cam-ink);
+    --color-cam-ink-muted: var(--cam-ink-muted);
+    --color-cam-accent: var(--cam-accent);
+    --color-cam-hairline: var(--cam-hairline);
+    --color-cam-panel: var(--cam-panel);
+    --color-cam-inverse: var(--cam-inverse);
+    --color-cam-error: var(--cam-error);
+    --color-cam-error-soft: var(--cam-error-soft);
+    --color-cam-ok: var(--cam-ok);
+    --color-cam-ok-border: var(--cam-ok-border);
+    --color-cam-warn-border: var(--cam-warn-border);
+    --color-cam-active-border: var(--cam-active-border);
+    --color-cam-subtle-border: var(--cam-subtle-border);
+    --color-cam-button-face: var(--cam-button-face);
+    --color-cam-button-border: var(--cam-button-border);
+
+    /* ---- Shadows (registered as custom properties for use in arbitrary values) ---- */
+    --shadow-cam-preview: 0 30px 80px var(--cam-shadow-heavy), inset 0 0 0 1px var(--cam-glow-faint);
+    --shadow-cam-panel: 0 22px 70px var(--cam-shadow-heavy);
+    --shadow-cam-card: 0 16px 34px var(--cam-shadow-medium);
+    --shadow-cam-card-active: 0 18px 42px var(--cam-shadow-strong), 0 0 0 4px var(--cam-subtle-border);
+    --shadow-cam-button: 0 12px 30px var(--cam-shadow-medium);
+    --shadow-cam-launch-btn: 0 18px 48px var(--cam-shadow-heavy), 0 0 0 8px var(--cam-glow-subtle);
+    --shadow-cam-text: 0 2px 14px var(--cam-shadow-text);
+    --shadow-cam-text-heavy: 0 2px 18px var(--cam-shadow-text-heavy);
+
+    /* ---- Radii ---- */
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
     --radius-lg: var(--radius);
@@ -49,7 +85,12 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* ==========================================================================
+   CSS Custom Properties — Color Definitions
+   ========================================================================== */
+
 :root {
+    /* ---- shadcn light mode (defaults) ---- */
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
@@ -83,12 +124,72 @@
     --sidebar-border: oklch(0.922 0 0);
     --sidebar-ring: oklch(0.708 0 0);
 
-    --camera-black: #050505;
-    --camera-ink: #fffdf7;
-    --camera-muted: rgba(255, 253, 247, 0.66);
-    --camera-hairline: rgba(255, 255, 255, 0.16);
-    --camera-warm: #f2ddae;
-    --panel: rgba(17, 17, 17, 0.78);
+    /* ---- Camera design system ---- */
+
+    /* Surfaces */
+    --cam-surface: #050505;
+    --cam-panel: rgba(17, 17, 17, 0.78);
+
+    /* Text / ink */
+    --cam-ink: #fffdf7;
+    --cam-ink-muted: rgba(255, 253, 247, 0.66);
+    --cam-accent: #f2ddae;
+    --cam-inverse: #070707;
+    --cam-error: #ffd0d0;
+    --cam-error-soft: #ffd7d7;
+
+    /* Borders */
+    --cam-hairline: rgba(255, 255, 255, 0.16);
+    --cam-active-border: rgba(255, 255, 255, 0.82);
+    --cam-subtle-border: rgba(255, 255, 255, 0.12);
+    --cam-button-border: rgba(255, 255, 255, 0.3);
+
+    /* Status (alignment indicators) */
+    --cam-ok: #d8ffe3;
+    --cam-ok-border: rgba(184, 255, 205, 0.46);
+    --cam-warn-border: rgba(242, 221, 174, 0.42);
+
+    /* Button surface */
+    --cam-button-face: rgba(255, 255, 255, 0.93);
+
+    /* Shadows / glows (used in composite shadow values) */
+    --cam-shadow-heavy: rgba(0, 0, 0, 0.54);
+    --cam-shadow-strong: rgba(0, 0, 0, 0.34);
+    --cam-shadow-medium: rgba(0, 0, 0, 0.28);
+    --cam-shadow-light: rgba(0, 0, 0, 0.36);
+    --cam-shadow-text: rgba(0, 0, 0, 0.82);
+    --cam-shadow-text-heavy: rgba(0, 0, 0, 0.9);
+    --cam-glow-faint: rgba(255, 255, 255, 0.05);
+    --cam-glow-subtle: rgba(255, 255, 255, 0.08);
+    --cam-glow-soft: rgba(255, 255, 255, 0.16);
+    --cam-glow-medium: rgba(255, 255, 255, 0.38);
+
+    /* Background gradient stops */
+    --cam-bg-warm-glow: rgba(242, 221, 174, 0.16);
+    --cam-bg-dark-start: #111;
+    --cam-bg-dark-mid: #030303;
+    --cam-bg-dark-end: #0a0a0a;
+
+    /* Vignette layers */
+    --cam-vignette-top: rgba(0, 0, 0, 0.52);
+    --cam-vignette-bottom: rgba(0, 0, 0, 0.62);
+    --cam-vignette-edge: rgba(0, 0, 0, 0.26);
+
+    /* Launch overlay */
+    --cam-launch-glow-center: rgba(255, 255, 255, 0.16);
+    --cam-launch-glow-warm: rgba(242, 221, 174, 0.14);
+    --cam-launch-dark-start: rgba(12, 12, 12, 0.74);
+    --cam-launch-dark-end: rgba(0, 0, 0, 0.97);
+
+    /* Skeleton shimmer */
+    --cam-shimmer-peak: rgba(255, 255, 255, 0.16);
+    --cam-shimmer-start: rgba(255, 255, 255, 0.09);
+    --cam-shimmer-end: rgba(255, 255, 255, 0.03);
+
+    /* Gallery panel gradient */
+    --cam-panel-highlight: rgba(255, 255, 255, 0.07);
+
+    /* Spacing */
     --page-pad: clamp(14px, 4vw, 28px);
 }
 
@@ -126,6 +227,10 @@
     --sidebar-ring: oklch(0.556 0 0);
 }
 
+/* ==========================================================================
+   Base Layer
+   ========================================================================== */
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -134,9 +239,9 @@
     @apply bg-background text-foreground;
     margin: 0;
     background:
-      radial-gradient(circle at 50% -10%, rgba(242, 221, 174, 0.16), transparent 28%),
-      linear-gradient(180deg, #111 0%, #030303 54%, #0a0a0a 100%);
-    color: var(--camera-ink);
+      radial-gradient(circle at 50% -10%, var(--cam-bg-warm-glow), transparent 28%),
+      linear-gradient(180deg, var(--cam-bg-dark-start) 0%, var(--cam-bg-dark-mid) 54%, var(--cam-bg-dark-end) 100%);
+    color: var(--cam-ink);
     font-synthesis: none;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
@@ -153,10 +258,12 @@
   }
 }
 
-/* ---------------------------------------------------------------------------
-   Complex component styles that require multi-value properties, keyframes,
-   pseudo-elements, or mask-image — kept as CSS rather than inline utilities.
-   --------------------------------------------------------------------------- */
+/* ==========================================================================
+   Component Styles
+   Complex visual styles kept as CSS — keyframes, multi-gradient backgrounds,
+   pseudo-elements, mask-image, and compound box-shadows.
+   All colors reference design-system tokens.
+   ========================================================================== */
 
 .stage-two-shell {
   width: min(100%, 980px);
@@ -170,40 +277,38 @@
   position: relative;
   height: clamp(390px, 60dvh, 690px);
   overflow: hidden;
-  border: 1px solid var(--camera-hairline);
+  border: 1px solid var(--cam-hairline);
   border-radius: 34px;
-  background: var(--camera-black);
-  box-shadow:
-    0 30px 80px rgba(0, 0, 0, 0.54),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  background: var(--cam-surface);
+  box-shadow: var(--shadow-cam-preview);
   isolation: isolate;
 }
 
 .camera-vignette {
   @apply absolute inset-0 pointer-events-none;
   background:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.52) 0%, transparent 25%),
-    linear-gradient(0deg, rgba(0, 0, 0, 0.62) 0%, transparent 34%),
-    radial-gradient(circle at center, transparent 46%, rgba(0, 0, 0, 0.26) 100%);
+    linear-gradient(180deg, var(--cam-vignette-top) 0%, transparent 25%),
+    linear-gradient(0deg, var(--cam-vignette-bottom) 0%, transparent 34%),
+    radial-gradient(circle at center, transparent 46%, var(--cam-vignette-edge) 100%);
 }
 
 .alignment-pill {
-  @apply rounded-full border border-[var(--camera-hairline)] bg-black/[0.38] px-[11px] py-[7px] text-[0.76rem] font-[850] text-white/90 backdrop-blur-[18px];
+  @apply rounded-full border border-cam-hairline bg-black/[0.38] px-[11px] py-[7px] text-[0.76rem] font-[850] text-white/90 backdrop-blur-[18px];
 }
 
 .alignment-pill.close {
-  border-color: rgba(184, 255, 205, 0.46);
-  color: #d8ffe3;
+  border-color: var(--cam-ok-border);
+  color: var(--cam-ok);
 }
 
 .alignment-pill.adjusting {
-  border-color: rgba(242, 221, 174, 0.42);
-  color: var(--camera-warm);
+  border-color: var(--cam-warn-border);
+  color: var(--cam-accent);
 }
 
 .generate-button {
-  @apply min-w-[86px] cursor-pointer rounded-full border border-white/30 bg-white/[0.93] px-3 py-2 text-[0.76rem] font-[950] text-[#070707];
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+  @apply min-w-[86px] cursor-pointer rounded-full border border-cam-button-border bg-cam-button-face px-3 py-2 text-[0.76rem] font-[950] text-cam-inverse;
+  box-shadow: var(--shadow-cam-button);
 }
 
 .generate-button:disabled {
@@ -213,19 +318,19 @@
 .camera-launch {
   @apply absolute inset-0 z-[3] flex flex-col items-center justify-center gap-[15px] p-7 text-center;
   background:
-    radial-gradient(circle at 50% 22%, rgba(255, 255, 255, 0.16), transparent 18%),
-    radial-gradient(circle at 18% 72%, rgba(242, 221, 174, 0.14), transparent 23%),
-    linear-gradient(180deg, rgba(12, 12, 12, 0.74), rgba(0, 0, 0, 0.97));
+    radial-gradient(circle at 50% 22%, var(--cam-launch-glow-center), transparent 18%),
+    radial-gradient(circle at 18% 72%, var(--cam-launch-glow-warm), transparent 23%),
+    linear-gradient(180deg, var(--cam-launch-dark-start), var(--cam-launch-dark-end));
 }
 
 .launch-mark {
   width: 82px;
   height: 118px;
-  border: 3px solid rgba(255, 255, 255, 0.92);
+  border: 3px solid var(--cam-active-border);
   border-radius: 52% 48% 46% 54% / 36% 40% 60% 64%;
   box-shadow:
-    0 0 22px rgba(255, 255, 255, 0.38),
-    inset 0 0 22px rgba(255, 255, 255, 0.1);
+    0 0 22px var(--cam-glow-medium),
+    inset 0 0 22px var(--cam-glow-faint);
   transform: rotate(-5deg);
 }
 
@@ -235,12 +340,12 @@
 }
 
 .pose-gallery {
-  @apply mt-[18px] overflow-hidden rounded-[30px] border border-[var(--camera-hairline)] backdrop-blur-[22px];
+  @apply mt-[18px] overflow-hidden rounded-[30px] border border-cam-hairline backdrop-blur-[22px];
   padding: 16px 0 18px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.07), transparent 42%),
-    var(--panel);
-  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.36);
+    linear-gradient(180deg, var(--cam-panel-highlight), transparent 42%),
+    var(--cam-panel);
+  box-shadow: var(--shadow-cam-panel);
 }
 
 .gallery-rail {
@@ -260,8 +365,8 @@
 
 .pose-card {
   width: clamp(116px, 32vw, 152px);
-  @apply cursor-pointer overflow-hidden rounded-[22px] border border-white/[0.12] bg-white/5 p-0 text-left text-[var(--camera-ink)];
-  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.28);
+  @apply cursor-pointer overflow-hidden rounded-[22px] border border-cam-subtle-border bg-white/5 p-0 text-left text-cam-ink;
+  box-shadow: var(--shadow-cam-card);
   transition:
     border-color 180ms ease,
     box-shadow 180ms ease,
@@ -269,10 +374,8 @@
 }
 
 .pose-card.active {
-  border-color: rgba(255, 255, 255, 0.82);
-  box-shadow:
-    0 18px 42px rgba(0, 0, 0, 0.34),
-    0 0 0 4px rgba(255, 255, 255, 0.12);
+  border-color: var(--cam-active-border);
+  box-shadow: var(--shadow-cam-card-active);
 }
 
 .pose-card.skeleton {
@@ -286,13 +389,13 @@
   content: '';
   @apply absolute inset-0;
   background:
-    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.16), transparent),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03));
+    linear-gradient(90deg, transparent, var(--cam-shimmer-peak), transparent),
+    linear-gradient(180deg, var(--cam-shimmer-start), var(--cam-shimmer-end));
   animation: skeleton-sweep 1.3s ease-in-out infinite;
 }
 
 .pose-card.skeleton span {
-  @apply absolute bottom-3 left-2.5 right-6 h-3 rounded-full bg-white/[0.16] p-0;
+  @apply absolute bottom-3 left-2.5 right-6 h-3 rounded-full bg-cam-hairline p-0;
 }
 
 .pose-card img {
@@ -304,6 +407,10 @@
   @apply block px-2.5 pb-[11px] pt-[9px] text-[0.78rem] font-[850] leading-[1.12] text-white/[0.88];
 }
 
+/* ==========================================================================
+   Keyframes
+   ========================================================================== */
+
 @keyframes gallery-spin {
   from { transform: translateX(0); }
   to { transform: translateX(calc(-50% - 6px)); }
@@ -313,6 +420,10 @@
   from { transform: translateX(-70%); }
   to { transform: translateX(70%); }
 }
+
+/* ==========================================================================
+   Responsive — Desktop two-column layout
+   ========================================================================== */
 
 @media (min-width: 760px) {
   .stage-two-shell {

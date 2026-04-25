@@ -221,7 +221,7 @@ function App() {
         <section className="camera-preview" data-camera-state={cameraState.status}>
           <video
             ref={videoRef}
-            className="absolute inset-0 h-full w-full -scale-x-100 bg-[var(--camera-black)] object-cover"
+            className="absolute inset-0 h-full w-full -scale-x-100 bg-cam-surface object-cover"
             playsInline
             muted
           />
@@ -240,7 +240,7 @@ function App() {
             <>
               <div
                 className="absolute left-4 right-4 top-4 z-[2] flex items-center justify-between gap-3"
-                style={{ textShadow: '0 2px 14px rgba(0,0,0,0.82)' }}
+                style={{ textShadow: 'var(--shadow-cam-text)' }}
                 aria-live="polite"
               >
                 <span className="text-[0.76rem] font-black uppercase tracking-[0.13em]">
@@ -263,14 +263,14 @@ function App() {
 
               <div
                 className="absolute inset-x-[18px] bottom-5 z-[2] flex flex-col items-center gap-2 text-center"
-                style={{ textShadow: '0 2px 18px rgba(0,0,0,0.9)' }}
+                style={{ textShadow: 'var(--shadow-cam-text-heavy)' }}
                 aria-live="polite"
               >
-                <span className="camera-hint-pill max-w-[min(410px,88vw)] rounded-full border border-[var(--camera-hairline)] bg-black/[0.38] px-[15px] py-2.5 text-[0.9rem] font-[850] leading-[1.25] backdrop-blur-[18px]">
+                <span className="camera-hint-pill max-w-[min(410px,88vw)] rounded-full border border-cam-hairline bg-black/[0.38] px-[15px] py-2.5 text-[0.9rem] font-[850] leading-[1.25] backdrop-blur-[18px]">
                   {selectedPose.instruction}
                 </span>
                 {landmarkerError && (
-                  <small className="max-w-[min(320px,88vw)] text-[0.72rem] text-[#ffd7d7]">
+                  <small className="max-w-[min(320px,88vw)] text-[0.72rem] text-cam-error-soft">
                     Pose tracker: {landmarkerError}
                   </small>
                 )}
@@ -281,20 +281,20 @@ function App() {
           {cameraState.status !== 'ready' && (
             <div className="camera-launch">
               <div className="launch-mark" aria-hidden="true" />
-              <p className="mt-2 -mb-1.5 text-[0.72rem] font-black uppercase tracking-[0.14em] text-[var(--camera-warm)]">
+              <p className="mt-2 -mb-1.5 text-[0.72rem] font-black uppercase tracking-[0.14em] text-cam-accent">
                 Mobile pose camera
               </p>
               <h1 className="m-0 max-w-[310px] text-[clamp(2.2rem,11vw,3.8rem)] leading-[0.92] tracking-[-0.07em]">
                 Line up before the shot.
               </h1>
-              <p className={`m-0 max-w-[300px] text-[0.98rem] leading-[1.45] text-[var(--camera-muted)] ${cameraState.status === 'idle' || cameraState.status === 'requesting' ? '' : 'text-[#ffd0d0]'}`}>
+              <p className={`m-0 max-w-[300px] text-[0.98rem] leading-[1.45] text-cam-ink-muted ${cameraState.status === 'idle' || cameraState.status === 'requesting' ? '' : 'text-cam-error'}`}>
                 {launchMessage}
               </p>
               {cameraState.status !== 'requesting' &&
                 cameraState.status !== 'unavailable' && (
                   <Button
                     variant="outline"
-                    className="camera-launch-btn mt-1.5 min-w-[178px] rounded-full border-white/70 bg-white/95 px-5 py-3.5 font-black text-[#050505] shadow-[0_18px_48px_rgba(0,0,0,0.42),0_0_0_8px_rgba(255,255,255,0.08)]"
+                    className="camera-launch-btn mt-1.5 min-w-[178px] rounded-full border-cam-active-border bg-cam-button-face px-5 py-3.5 font-black text-cam-inverse shadow-[var(--shadow-cam-launch-btn)]"
                     onClick={() => void requestCamera()}
                   >
                     {cameraState.status === 'idle' ? 'Enable camera' : 'Retry camera'}
@@ -307,7 +307,7 @@ function App() {
         <section className="pose-gallery" aria-label="Generated pose gallery">
           <div className="flex items-end justify-between gap-3.5 px-4 pb-[13px]">
             <div>
-              <p className="m-0 text-[0.72rem] font-black uppercase tracking-[0.14em] text-[var(--camera-muted)]">
+              <p className="m-0 text-[0.72rem] font-black uppercase tracking-[0.14em] text-cam-ink-muted">
                 {galleryBusy
                   ? 'Generating with OpenAI'
                   : hasGeneratedGallery
@@ -320,14 +320,14 @@ function App() {
                 {galleryBusy ? 'Creating pose set' : selectedPose.title}
               </h2>
             </div>
-            <span className="text-[0.82rem] font-black text-[var(--camera-warm)]">
+            <span className="text-[0.82rem] font-black text-cam-accent">
               {galleryBusy
                 ? `${generationProgress.current}/${generationProgress.total}`
                 : `${String(galleryPoses.findIndex((pose) => pose.id === selectedPose.id) + 1).padStart(2, '0')} / 10`}
             </span>
           </div>
           {generationError && (
-            <p className="mx-4 -mt-1 mb-3 text-[0.78rem] leading-[1.3] text-[#ffd0d0]">
+            <p className="mx-4 -mt-1 mb-3 text-[0.78rem] leading-[1.3] text-cam-error">
               {generationError}
             </p>
           )}

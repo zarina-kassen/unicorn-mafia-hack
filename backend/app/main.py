@@ -38,12 +38,18 @@ def _summarize_landmarks(lm: list[Landmark]) -> str:
     if not lm:
         return "no landmarks"
     important = {
-        11: "L-shoulder", 12: "R-shoulder",
-        13: "L-elbow", 14: "R-elbow",
-        15: "L-wrist", 16: "R-wrist",
-        23: "L-hip", 24: "R-hip",
-        25: "L-knee", 26: "R-knee",
-        27: "L-ankle", 28: "R-ankle",
+        11: "L-shoulder",
+        12: "R-shoulder",
+        13: "L-elbow",
+        14: "R-elbow",
+        15: "L-wrist",
+        16: "R-wrist",
+        23: "L-hip",
+        24: "R-hip",
+        25: "L-knee",
+        26: "R-knee",
+        27: "L-ankle",
+        28: "R-ankle",
     }
     parts: list[str] = []
     for idx, name in important.items():
@@ -79,6 +85,7 @@ def get_agent() -> Agent[None, GuidanceResponse]:
         output_type=GuidanceResponse,
         system_prompt=SYSTEM_PROMPT,
     )
+
 
 app = FastAPI(title="frame-mog")
 

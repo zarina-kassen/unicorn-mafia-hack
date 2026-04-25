@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
-from typing import Any, cast
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -72,56 +71,31 @@ async def _generate_and_store_image(
     )
 
     try:
-        # Use OpenRouter chat completions for image generation with reference image
-        message_content = [
-            {"type": "text", "text": prompt},
-            {"type": "image_url", "image_url": {"url": reference_image_data_url}},
-        ]
-        response = await client.chat.completions.create(
+        # Use OpenAI images API directly for image generation
+        response = await client.images.generate(
             model=settings.image_model,
-            messages=cast(list, [{"role": "user", "content": message_content}]),
+            prompt=prompt,
+            response_format="url",
+            size="1024x1024",
+            n=1,
         )
 
-        # Extract image from response - OpenRouter may return images in different formats
-        message = response.choices[0].message
-
-        # Try to extract image from various possible response formats
-        image_data_url: str | None = None
-
-        # Try message.images first (OpenRouter-specific)
-        if hasattr(message, "images") and message.images:  # type: ignore[attr-defined]
-            images_attr = cast(Any, message.images)  # type: ignore[attr-defined]
-            if images_attr and isinstance(images_attr, list) and len(images_attr) > 0:
-                try:
-                    first_image = images_attr[0]
-                    if hasattr(first_image, "image_url") and hasattr(
-                        first_image.image_url, "url"
-                    ):
-                        image_data_url = first_image.image_url.url
-                    elif isinstance(first_image, dict) and "url" in first_image:
-                        image_data_url = first_image["url"]
-                except Exception:
-                    pass
-
-        # If no images in message.images, try parsing from content
-        if not image_data_url and message.content:
-            try:
-                import re
-
-                url_match = re.search(r'https?://[^\s"]+', message.content)
-                if url_match:
-                    image_data_url = url_match.group(0)
-            except Exception:
-                pass
-
-        if not image_data_url:
+        # Extract the image URL from the response
+        if response.data and len(response.data) > 0:
+            image_data_url = response.data[0].url
+            if not image_data_url:
+                logger.warning(
+                    "Image generation failed for slot %d: Image URL is None",
+                    slot_index,
+                )
+                return None
+            image_url = await _store_base64_image(image_data_url, job_id)
+        else:
             logger.warning(
-                "Image generation failed for slot %d: No image URL found in response",
+                "Image generation failed for slot %d: No images in response",
                 slot_index,
             )
             return None
-
-        image_url = await _store_base64_image(image_data_url, job_id)
     except Exception as exc:
         logger.warning("Image generation failed for slot %d: %s", slot_index, exc)
         return None

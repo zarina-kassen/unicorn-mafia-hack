@@ -17,28 +17,33 @@ from botocore.config import Config as BotoConfig
 
 logger = logging.getLogger(__name__)
 
-S3_ENDPOINT_URL: str | None = os.environ.get("S3_ENDPOINT_URL")
-S3_ACCESS_KEY_ID: str | None = os.environ.get("S3_ACCESS_KEY_ID")
-S3_SECRET_ACCESS_KEY: str | None = os.environ.get("S3_SECRET_ACCESS_KEY")
-S3_BUCKET: str = os.environ.get("S3_BUCKET", "generated-images")
-S3_REGION: str = os.environ.get("S3_REGION", "garage")
-S3_PUBLIC_URL: str | None = os.environ.get("S3_PUBLIC_URL")
+
+def _s3_env(key: str, default: str | None = None) -> str | None:
+    return os.environ.get(key, default)
 
 
 def s3_enabled() -> bool:
-    return bool(S3_ENDPOINT_URL and S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY)
+    return bool(
+        _s3_env("S3_ENDPOINT_URL")
+        and _s3_env("S3_ACCESS_KEY_ID")
+        and _s3_env("S3_SECRET_ACCESS_KEY")
+    )
 
 
 @lru_cache(maxsize=1)
 def _get_s3_client():  # type: ignore[no-untyped-def]
     return boto3.client(
         "s3",
-        endpoint_url=S3_ENDPOINT_URL,
-        aws_access_key_id=S3_ACCESS_KEY_ID,
-        aws_secret_access_key=S3_SECRET_ACCESS_KEY,
-        region_name=S3_REGION,
+        endpoint_url=_s3_env("S3_ENDPOINT_URL"),
+        aws_access_key_id=_s3_env("S3_ACCESS_KEY_ID"),
+        aws_secret_access_key=_s3_env("S3_SECRET_ACCESS_KEY"),
+        region_name=_s3_env("S3_REGION", "garage"),
         config=BotoConfig(signature_version="s3v4"),
     )
+
+
+def _bucket() -> str:
+    return _s3_env("S3_BUCKET") or "generated-images"
 
 
 def upload_file(local_path: Path, s3_key: str) -> str:
@@ -52,7 +57,7 @@ def upload_file(local_path: Path, s3_key: str) -> str:
 
     client.upload_file(
         str(local_path),
-        S3_BUCKET,
+        _bucket(),
         s3_key,
         ExtraArgs={"ContentType": content_type},
     )
@@ -63,7 +68,7 @@ def upload_bytes(data: bytes, s3_key: str, content_type: str = "image/jpeg") -> 
     """Upload raw bytes to S3 and return the public URL."""
     client = _get_s3_client()
     client.put_object(
-        Bucket=S3_BUCKET,
+        Bucket=_bucket(),
         Key=s3_key,
         Body=data,
         ContentType=content_type,
@@ -74,16 +79,16 @@ def upload_bytes(data: bytes, s3_key: str, content_type: str = "image/jpeg") -> 
 def delete_prefix(prefix: str) -> None:
     """Delete all objects under a given S3 key prefix."""
     client = _get_s3_client()
-    response = client.list_objects_v2(Bucket=S3_BUCKET, Prefix=prefix)
+    response = client.list_objects_v2(Bucket=_bucket(), Prefix=prefix)
     objects = response.get("Contents", [])
     if objects:
         client.delete_objects(
-            Bucket=S3_BUCKET,
+            Bucket=_bucket(),
             Delete={"Objects": [{"Key": obj["Key"]} for obj in objects]},
         )
 
 
 def public_url(s3_key: str) -> str:
     """Return the public URL for an S3 object."""
-    base = S3_PUBLIC_URL or S3_ENDPOINT_URL or ""
-    return f"{base.rstrip('/')}/{S3_BUCKET}/{s3_key}"
+    base = _s3_env("S3_PUBLIC_URL") or _s3_env("S3_ENDPOINT_URL") or ""
+    return f"{base.rstrip('/')}/{_bucket()}/{s3_key}"

@@ -55,7 +55,7 @@ if [ ! -f "$MARKER" ]; then
   echo "Initializing Garage cluster..."
 
   # Get node ID and assign layout
-  NODE_ID=$($GARAGE status 2>/dev/null | grep -oP '[0-9a-f]{16}' | head -1)
+  NODE_ID=$($GARAGE status 2>/dev/null | grep -oE '[0-9a-f]{16}' | head -1)
   if [ -n "$NODE_ID" ]; then
     $GARAGE layout assign "$NODE_ID" -z dc1 -c 1G -t node1
     $GARAGE layout apply --version 1

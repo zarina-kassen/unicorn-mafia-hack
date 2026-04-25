@@ -1,0 +1,10 @@
+[project]
+name = "frame-mog"
+version = "0.1.0"
+description = "frame-mog FastAPI backend"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.136.1",
+    "uvicorn[standard]>=0.46.0",
+]

@@ -272,5 +272,5 @@ export function PoseOverlay({
     }
   }, [videoRef, mirrored, paused])
 
-  return <canvas ref={canvasRef} className="pose-overlay" />
+  return <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none mix-blend-screen" />
 }

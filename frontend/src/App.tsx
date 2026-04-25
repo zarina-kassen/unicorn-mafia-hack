@@ -17,7 +17,7 @@ import {
   type MemorySeedEntryPayload,
   type PoseVariantResult,
 } from './backend/client'
-import './App.css'
+import { Button } from '@/components/ui/button'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? ''
 
@@ -320,10 +320,15 @@ function App() {
           : 'Generate'
 
   return (
-    <div className="app-shell">
+    <div className="min-h-screen min-h-dvh overflow-x-hidden">
       <main className="stage-two-shell">
         <section className="camera-preview" data-camera-state={cameraState.status}>
-          <video ref={videoRef} className="preview-video" playsInline muted />
+          <video
+            ref={videoRef}
+            className="absolute inset-0 h-full w-full -scale-x-100 bg-cam-surface object-cover"
+            playsInline
+            muted
+          />
 
           {cameraState.status === 'ready' && (
             <PoseOverlay
@@ -337,27 +342,41 @@ function App() {
 
           {cameraState.status === 'ready' && (
             <>
-              <div className="camera-top-bar" aria-live="polite">
-                <span className="camera-brand">frame-mog</span>
-                <div className="camera-actions">
+              <div
+                className="absolute left-4 right-4 top-4 z-[2] flex items-center justify-between gap-3"
+                style={{ textShadow: 'var(--shadow-cam-text)' }}
+                aria-live="polite"
+              >
+                <span className="text-[0.76rem] font-black uppercase tracking-[0.13em]">
+                  frame-mog
+                </span>
+                <div className="flex items-center gap-2">
                   <span className={`alignment-pill ${alignment.status}`}>
                     {alignmentCopy}
                   </span>
-                  <button
+                  <Button
                     className="generate-button"
                     type="button"
                     onClick={() => void handleGeneratePoses()}
                     disabled={galleryBusy}
                   >
                     {generationCopy}
-                  </button>
+                  </Button>
                 </div>
               </div>
 
-              <div className="camera-bottom-hint" aria-live="polite">
-                <span>{selectedPose.instruction}</span>
+              <div
+                className="absolute inset-x-[18px] bottom-5 z-[2] flex flex-col items-center gap-2 text-center"
+                style={{ textShadow: 'var(--shadow-cam-text-heavy)' }}
+                aria-live="polite"
+              >
+                <span className="camera-hint-pill max-w-[min(410px,88vw)] rounded-full border border-cam-hairline bg-black/[0.38] px-[15px] py-2.5 text-[0.9rem] font-[850] leading-[1.25] backdrop-blur-[18px]">
+                  {selectedPose.instruction}
+                </span>
                 {landmarkerError && (
-                  <small>Pose tracker: {landmarkerError}</small>
+                  <small className="max-w-[min(320px,88vw)] text-[0.72rem] text-cam-error-soft">
+                    Pose tracker: {landmarkerError}
+                  </small>
                 )}
                 {seedMessage && <small>{seedMessage}</small>}
               </div>
@@ -367,25 +386,33 @@ function App() {
           {cameraState.status !== 'ready' && (
             <div className="camera-launch">
               <div className="launch-mark" aria-hidden="true" />
-              <p className="launch-kicker">Mobile pose camera</p>
-              <h1>Line up before the shot.</h1>
-              <p className={cameraState.status === 'idle' || cameraState.status === 'requesting' ? '' : 'error'}>
+              <p className="mt-2 -mb-1.5 text-[0.72rem] font-black uppercase tracking-[0.14em] text-cam-accent">
+                Mobile pose camera
+              </p>
+              <h1 className="m-0 max-w-[310px] text-[clamp(2.2rem,11vw,3.8rem)] leading-[0.92] tracking-[-0.07em]">
+                Line up before the shot.
+              </h1>
+              <p className={`m-0 max-w-[300px] text-[0.98rem] leading-[1.45] ${cameraState.status === 'idle' || cameraState.status === 'requesting' ? 'text-cam-ink-muted' : 'text-cam-error'}`}>
                 {launchMessage}
               </p>
               {cameraState.status !== 'requesting' &&
                 cameraState.status !== 'unavailable' && (
-                  <button type="button" onClick={() => void requestCamera()}>
+                  <Button
+                    variant="outline"
+                    className="camera-launch-btn mt-1.5 h-auto min-w-[178px] rounded-full border-cam-active-border bg-cam-button-face dark:bg-cam-button-face px-5 py-3.5 font-black text-cam-inverse dark:text-cam-inverse hover:bg-cam-button-face/90 hover:text-cam-inverse dark:hover:bg-cam-button-face/90 dark:hover:text-cam-inverse shadow-[var(--shadow-cam-launch-btn)]"
+                    onClick={() => void requestCamera()}
+                  >
                     {cameraState.status === 'idle' ? 'Enable camera' : 'Retry camera'}
-                  </button>
+                  </Button>
                 )}
             </div>
           )}
         </section>
 
         <section className="pose-gallery" aria-label="Generated pose gallery">
-          <div className="gallery-heading">
+          <div className="flex items-end justify-between gap-3.5 px-4 pb-[13px]">
             <div>
-              <p>
+              <p className="m-0 text-[0.72rem] font-black uppercase tracking-[0.14em] text-cam-ink-muted">
                 {galleryBusy
                   ? 'Generating with OpenAI'
                   : hasGeneratedGallery
@@ -394,15 +421,21 @@ function App() {
                       ? 'Fallback poses'
                       : 'Demo fallback'}
               </p>
-              <h2>{galleryBusy ? 'Creating pose set' : selectedPose.title}</h2>
+              <h2 className="m-0 mt-0.5 text-[clamp(1.35rem,6vw,2rem)] leading-none tracking-[-0.055em]">
+                {galleryBusy ? 'Creating pose set' : selectedPose.title}
+              </h2>
             </div>
-            <span>
+            <span className="text-[0.82rem] font-black text-cam-accent">
               {galleryBusy
                 ? `${generationProgress.current}/${generationProgress.total}`
                 : `${String(galleryPoses.findIndex((pose) => pose.id === selectedPose.id) + 1).padStart(2, '0')} / 10`}
             </span>
           </div>
-          {generationError && <p className="gallery-error">{generationError}</p>}
+          {generationError && (
+            <p className="mx-4 -mt-1 mb-3 text-[0.78rem] leading-[1.3] text-cam-error">
+              {generationError}
+            </p>
+          )}
 
           <div className="gallery-rail">
             <div className="memory-seed-row">

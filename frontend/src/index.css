@@ -1,18 +1,486 @@
-html,
-body,
-#root {
-  margin: 0;
-  padding: 0;
-  min-height: 100vh;
-  background: #020617;
-  color: #e2e8f0;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ==========================================================================
+   Design System — Tailwind Theme Tokens
+   ========================================================================== */
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    --font-sans: 'Geist Variable', ui-rounded, 'SF Pro Rounded', 'Avenir Next',
+      'Helvetica Neue', sans-serif;
+
+    /* ---- shadcn color tokens ---- */
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+
+    /* ---- Camera design system tokens ---- */
+    --color-cam-surface: var(--cam-surface);
+    --color-cam-ink: var(--cam-ink);
+    --color-cam-ink-muted: var(--cam-ink-muted);
+    --color-cam-accent: var(--cam-accent);
+    --color-cam-hairline: var(--cam-hairline);
+    --color-cam-panel: var(--cam-panel);
+    --color-cam-inverse: var(--cam-inverse);
+    --color-cam-error: var(--cam-error);
+    --color-cam-error-soft: var(--cam-error-soft);
+    --color-cam-ok: var(--cam-ok);
+    --color-cam-ok-border: var(--cam-ok-border);
+    --color-cam-warn-border: var(--cam-warn-border);
+    --color-cam-active-border: var(--cam-active-border);
+    --color-cam-subtle-border: var(--cam-subtle-border);
+    --color-cam-button-face: var(--cam-button-face);
+    --color-cam-button-border: var(--cam-button-border);
+
+    /* ---- Radii ---- */
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-button {
-  font-family: inherit;
-  font-size: 0.95rem;
+/* Shadow tokens need their own non-inline @theme so they are emitted as CSS
+   custom properties — var(--shadow-cam-*) references in CSS rules and inline
+   React styles depend on these existing at runtime. */
+@theme {
+    --shadow-cam-preview: 0 30px 80px var(--cam-shadow-heavy), inset 0 0 0 1px var(--cam-glow-faint);
+    --shadow-cam-panel: 0 22px 70px var(--cam-shadow-heavy);
+    --shadow-cam-card: 0 16px 34px var(--cam-shadow-medium);
+    --shadow-cam-card-active: 0 18px 42px var(--cam-shadow-strong), 0 0 0 4px var(--cam-subtle-border);
+    --shadow-cam-button: 0 12px 30px var(--cam-shadow-medium);
+    --shadow-cam-launch-btn: 0 18px 48px var(--cam-shadow-heavy), 0 0 0 8px var(--cam-glow-subtle);
+    --shadow-cam-text: 0 2px 14px var(--cam-shadow-text);
+    --shadow-cam-text-heavy: 0 2px 18px var(--cam-shadow-text-heavy);
+}
+
+/* ==========================================================================
+   CSS Custom Properties — Color Definitions
+   ========================================================================== */
+
+:root {
+    /* ---- shadcn light mode (defaults) ---- */
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --radius: 0.625rem;
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-primary: oklch(0.205 0 0);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-ring: oklch(0.708 0 0);
+
+    /* ---- Camera design system ---- */
+
+    /* Surfaces */
+    --cam-surface: #050505;
+    --cam-panel: rgba(17, 17, 17, 0.78);
+
+    /* Text / ink */
+    --cam-ink: #fffdf7;
+    --cam-ink-muted: rgba(255, 253, 247, 0.66);
+    --cam-accent: #f2ddae;
+    --cam-inverse: #070707;
+    --cam-error: #ffd0d0;
+    --cam-error-soft: #ffd7d7;
+
+    /* Borders */
+    --cam-hairline: rgba(255, 255, 255, 0.16);
+    --cam-active-border: rgba(255, 255, 255, 0.82);
+    --cam-subtle-border: rgba(255, 255, 255, 0.12);
+    --cam-button-border: rgba(255, 255, 255, 0.3);
+
+    /* Status (alignment indicators) */
+    --cam-ok: #d8ffe3;
+    --cam-ok-border: rgba(184, 255, 205, 0.46);
+    --cam-warn-border: rgba(242, 221, 174, 0.42);
+
+    /* Button surface */
+    --cam-button-face: rgba(255, 255, 255, 0.93);
+
+    /* Shadows / glows (used in composite shadow values) */
+    --cam-shadow-heavy: rgba(0, 0, 0, 0.54);
+    --cam-shadow-strong: rgba(0, 0, 0, 0.34);
+    --cam-shadow-medium: rgba(0, 0, 0, 0.28);
+    --cam-shadow-light: rgba(0, 0, 0, 0.36);
+    --cam-shadow-text: rgba(0, 0, 0, 0.82);
+    --cam-shadow-text-heavy: rgba(0, 0, 0, 0.9);
+    --cam-glow-faint: rgba(255, 255, 255, 0.05);
+    --cam-glow-subtle: rgba(255, 255, 255, 0.08);
+    --cam-glow-soft: rgba(255, 255, 255, 0.16);
+    --cam-glow-medium: rgba(255, 255, 255, 0.38);
+
+    /* Background gradient stops */
+    --cam-bg-warm-glow: rgba(242, 221, 174, 0.16);
+    --cam-bg-dark-start: #111;
+    --cam-bg-dark-mid: #030303;
+    --cam-bg-dark-end: #0a0a0a;
+
+    /* Vignette layers */
+    --cam-vignette-top: rgba(0, 0, 0, 0.52);
+    --cam-vignette-bottom: rgba(0, 0, 0, 0.62);
+    --cam-vignette-edge: rgba(0, 0, 0, 0.26);
+
+    /* Launch overlay */
+    --cam-launch-glow-center: rgba(255, 255, 255, 0.16);
+    --cam-launch-glow-warm: rgba(242, 221, 174, 0.14);
+    --cam-launch-dark-start: rgba(12, 12, 12, 0.74);
+    --cam-launch-dark-end: rgba(0, 0, 0, 0.97);
+
+    /* Skeleton shimmer */
+    --cam-shimmer-peak: rgba(255, 255, 255, 0.16);
+    --cam-shimmer-start: rgba(255, 255, 255, 0.09);
+    --cam-shimmer-end: rgba(255, 255, 255, 0.03);
+
+    /* Gallery panel gradient */
+    --cam-panel-highlight: rgba(255, 255, 255, 0.07);
+
+    /* Spacing */
+    --page-pad: clamp(14px, 4vw, 28px);
+}
+
+.dark {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.556 0 0);
+}
+
+/* ==========================================================================
+   Base Layer
+   ========================================================================== */
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    margin: 0;
+    background:
+      radial-gradient(circle at 50% -10%, var(--cam-bg-warm-glow), transparent 28%),
+      linear-gradient(180deg, var(--cam-bg-dark-start) 0%, var(--cam-bg-dark-mid) 54%, var(--cam-bg-dark-end) 100%);
+    color: var(--cam-ink);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    touch-action: manipulation;
+  }
+  html {
+    @apply font-sans;
+    color-scheme: dark;
+  }
+  button {
+    font: inherit;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* ==========================================================================
+   Component Styles
+   Complex visual styles kept as CSS — keyframes, multi-gradient backgrounds,
+   pseudo-elements, mask-image, and compound box-shadows.
+   All colors reference design-system tokens.
+   ========================================================================== */
+
+.stage-two-shell {
+  width: min(100%, 980px);
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: max(var(--page-pad), env(safe-area-inset-top, 0px))
+    var(--page-pad) max(18px, env(safe-area-inset-bottom, 0px));
+}
+
+.camera-preview {
+  position: relative;
+  height: clamp(390px, 60dvh, 690px);
+  overflow: hidden;
+  border: 1px solid var(--cam-hairline);
+  border-radius: 34px;
+  background: var(--cam-surface);
+  box-shadow: var(--shadow-cam-preview);
+  isolation: isolate;
+}
+
+.camera-vignette {
+  @apply absolute inset-0 pointer-events-none;
+  background:
+    linear-gradient(180deg, var(--cam-vignette-top) 0%, transparent 25%),
+    linear-gradient(0deg, var(--cam-vignette-bottom) 0%, transparent 34%),
+    radial-gradient(circle at center, transparent 46%, var(--cam-vignette-edge) 100%);
+}
+
+.alignment-pill {
+  @apply rounded-full border border-cam-hairline bg-black/[0.38] px-[11px] py-[7px] text-[0.76rem] font-[850] text-white/90 backdrop-blur-[18px];
+}
+
+.alignment-pill.close {
+  border-color: var(--cam-ok-border);
+  color: var(--cam-ok);
+}
+
+.alignment-pill.adjusting {
+  border-color: var(--cam-warn-border);
+  color: var(--cam-accent);
+}
+
+.generate-button {
+  @apply min-w-[86px] cursor-pointer rounded-full border border-cam-button-border bg-cam-button-face px-3 py-2 text-[0.76rem] font-[950] text-cam-inverse;
+  box-shadow: var(--shadow-cam-button);
+}
+
+.generate-button:disabled {
+  @apply cursor-progress opacity-70;
+}
+
+.camera-launch {
+  @apply absolute inset-0 z-[3] flex flex-col items-center justify-center gap-[15px] p-7 text-center;
+  background:
+    radial-gradient(circle at 50% 22%, var(--cam-launch-glow-center), transparent 18%),
+    radial-gradient(circle at 18% 72%, var(--cam-launch-glow-warm), transparent 23%),
+    linear-gradient(180deg, var(--cam-launch-dark-start), var(--cam-launch-dark-end));
+}
+
+.launch-mark {
+  width: 82px;
+  height: 118px;
+  border: 3px solid var(--cam-active-border);
+  border-radius: 52% 48% 46% 54% / 36% 40% 60% 64%;
+  box-shadow:
+    0 0 22px var(--cam-glow-medium),
+    inset 0 0 22px var(--cam-glow-faint);
+  transform: rotate(-5deg);
+}
+
+.camera-launch-btn:active,
+.pose-card:active {
+  transform: scale(0.98);
+}
+
+.pose-gallery {
+  @apply mt-[18px] overflow-hidden rounded-[30px] border border-cam-hairline backdrop-blur-[22px];
+  padding: 16px 0 18px;
+  background:
+    linear-gradient(180deg, var(--cam-panel-highlight), transparent 42%),
+    var(--cam-panel);
+  box-shadow: var(--shadow-cam-panel);
+}
+
+.gallery-rail {
+  @apply w-full overflow-hidden;
+  mask-image: linear-gradient(90deg, transparent, #000 11%, #000 89%, transparent);
+}
+
+.gallery-track {
+  @apply flex w-max gap-3 px-4;
+  animation: gallery-spin 52s linear infinite;
+}
+
+.gallery-rail:focus-within .gallery-track,
+.gallery-rail:hover .gallery-track {
+  animation-play-state: paused;
+}
+
+.pose-card {
+  width: clamp(116px, 32vw, 152px);
+  @apply cursor-pointer overflow-hidden rounded-[22px] border border-cam-subtle-border bg-white/5 p-0 text-left text-cam-ink;
+  box-shadow: var(--shadow-cam-card);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.pose-card.active {
+  border-color: var(--cam-active-border);
+  box-shadow: var(--shadow-cam-card-active);
+}
+
+.pose-card.skeleton {
+  position: relative;
+  height: calc(clamp(116px, 32vw, 152px) * 1.58);
+  cursor: default;
+  overflow: hidden;
+}
+
+.pose-card.skeleton::before {
+  content: '';
+  @apply absolute inset-0;
+  background:
+    linear-gradient(90deg, transparent, var(--cam-shimmer-peak), transparent),
+    linear-gradient(180deg, var(--cam-shimmer-start), var(--cam-shimmer-end));
+  animation: skeleton-sweep 1.3s ease-in-out infinite;
+}
+
+.pose-card.skeleton span {
+  @apply absolute bottom-3 left-2.5 right-6 h-3 rounded-full bg-cam-hairline p-0;
+}
+
+.pose-card img {
+  @apply block w-full object-cover;
+  aspect-ratio: 2 / 3;
+}
+
+.pose-card span {
+  @apply block px-2.5 pb-[11px] pt-[9px] text-[0.78rem] font-[850] leading-[1.12] text-white/[0.88];
+}
+
+.memory-seed-row,
+.memory-controls-row {
+  @apply flex items-center gap-2 px-4 mb-2.5;
+}
+
+.memory-controls-row {
+  @apply flex-wrap;
+}
+
+.memory-status {
+  @apply px-4 pb-2 text-[0.75rem] text-white/75;
+}
+
+/* ==========================================================================
+   Keyframes
+   ========================================================================== */
+
+@keyframes gallery-spin {
+  from { transform: translateX(0); }
+  to { transform: translateX(calc(-50% - 6px)); }
+}
+
+@keyframes skeleton-sweep {
+  from { transform: translateX(-70%); }
+  to { transform: translateX(70%); }
+}
+
+/* ==========================================================================
+   Responsive — Desktop two-column layout
+   ========================================================================== */
+
+@media (min-width: 760px) {
+  .stage-two-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+    align-items: stretch;
+    gap: 18px;
+    padding-top: max(28px, env(safe-area-inset-top, 0px));
+  }
+
+  .camera-preview {
+    height: min(78dvh, 760px);
+  }
+
+  .pose-gallery {
+    @apply mt-0 flex min-h-0 flex-col;
+  }
+
+  .gallery-rail {
+    @apply flex-1;
+    mask-image: linear-gradient(180deg, transparent, #000 8%, #000 92%, transparent);
+  }
+
+  .gallery-track {
+    flex-direction: column;
+    animation: gallery-spin-vertical 58s linear infinite;
+  }
+
+  .pose-card {
+    @apply w-full;
+  }
+}
+
+@keyframes gallery-spin-vertical {
+  from { transform: translateY(0); }
+  to { transform: translateY(calc(-50% - 6px)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gallery-track {
+    animation: none;
+  }
 }

@@ -28,9 +28,9 @@ GENERATED_ROOT = Path(
 )
 GENERATED_TTL_SECONDS = int(os.environ.get("GENERATED_TTL_SECONDS", str(6 * 60 * 60)))
 IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "gpt-image-1")
-IMAGE_SIZE = os.environ.get("IMAGE_SIZE", "1024x1536")
-IMAGE_QUALITY = os.environ.get("IMAGE_QUALITY", "medium")
-IMAGE_INPUT_FIDELITY = os.environ.get("IMAGE_INPUT_FIDELITY", "high")
+IMAGE_SIZE: str = os.environ.get("IMAGE_SIZE", "1024x1536")
+IMAGE_QUALITY: str = os.environ.get("IMAGE_QUALITY", "medium")
+IMAGE_INPUT_FIDELITY: str = os.environ.get("IMAGE_INPUT_FIDELITY", "high")
 
 SYSTEM_PROMPT = """\
 You are a pose-variation image generation assistant for a mobile camera coaching app.
@@ -262,9 +262,9 @@ def run_pose_variant_job(job_id: str) -> None:
                     model=IMAGE_MODEL,
                     image=image_file,
                     prompt=_prompt_for_pose_with_personalization(spec, personalization),
-                    size=IMAGE_SIZE,
-                    quality=IMAGE_QUALITY,
-                    input_fidelity=IMAGE_INPUT_FIDELITY,
+                    size=IMAGE_SIZE,  # ty: ignore[invalid-argument-type]
+                    quality=IMAGE_QUALITY,  # ty: ignore[invalid-argument-type]
+                    input_fidelity=IMAGE_INPUT_FIDELITY,  # ty: ignore[invalid-argument-type]
                     output_format="jpeg",
                 )
 

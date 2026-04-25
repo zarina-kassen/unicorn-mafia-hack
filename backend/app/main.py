@@ -103,7 +103,7 @@ def get_agent() -> Agent[None, GuidanceResponse]:
     Lazy so importing this module doesn't require a gateway key — handy for
     tests and for the /api/templates endpoint which doesn't touch the model.
     """
-    return Agent(
+    return Agent(  # ty: ignore[invalid-return-type]  # output_type sets generic at runtime
         AGENT_MODEL,
         output_type=GuidanceResponse,
         system_prompt=SYSTEM_PROMPT,

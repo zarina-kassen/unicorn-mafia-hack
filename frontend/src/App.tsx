@@ -399,7 +399,7 @@ function App() {
                 cameraState.status !== 'unavailable' && (
                   <Button
                     variant="outline"
-                    className="camera-launch-btn mt-1.5 min-w-[178px] rounded-full border-cam-active-border bg-cam-button-face px-5 py-3.5 font-black text-cam-inverse shadow-[var(--shadow-cam-launch-btn)]"
+                    className="camera-launch-btn mt-1.5 min-w-[178px] rounded-full border-cam-active-border bg-cam-button-face dark:bg-cam-button-face px-5 py-3.5 font-black text-cam-inverse dark:text-cam-inverse hover:bg-cam-button-face/90 dark:hover:bg-cam-button-face/90 shadow-[var(--shadow-cam-launch-btn)]"
                     onClick={() => void requestCamera()}
                   >
                     {cameraState.status === 'idle' ? 'Enable camera' : 'Retry camera'}

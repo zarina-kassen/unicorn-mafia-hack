@@ -11,7 +11,7 @@ import os
 from functools import lru_cache
 from typing import Any
 
-from mubit import Client
+from mubit import Client  # type: ignore[import-not-found]
 
 logger = logging.getLogger(__name__)
 

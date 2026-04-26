@@ -1,19 +1,25 @@
 """Tests for LinkedIn pipeline (demo mode, no real external APIs)."""
 
+from __future__ import annotations
+
 import base64
 import json
 from collections.abc import Generator
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.auth.clerk import require_auth
+from app.linkedin_store import init_linkedin_store, take_oauth_state
 from app.main import app
-from app.linkedin_store import take_oauth_state
 
 
 @pytest.fixture(autouse=True)
-def _bypass_auth() -> Generator[None]:
+def _bypass_auth(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[None]:
+    db_path = tmp_path / "test_linkedin.sqlite3"
+    monkeypatch.setattr("app.linkedin_store._DB_PATH", db_path)
+    init_linkedin_store()
     app.dependency_overrides[require_auth] = lambda: "test-linkedin-user"
     yield
     app.dependency_overrides.pop(require_auth, None)

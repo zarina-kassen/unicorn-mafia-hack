@@ -119,6 +119,7 @@ jobs:
           wait_deploy: true
           github_deployment: true
           deployment_environment: "production"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
   deploy-frontend:
     name: "Deploy · Frontend"
@@ -135,3 +136,4 @@ jobs:
           wait_deploy: true
           github_deployment: true
           deployment_environment: "production"
+          github_token: ${{ secrets.GITHUB_TOKEN }}

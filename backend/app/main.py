@@ -29,6 +29,10 @@ load_dotenv(override=True)
 logger = logging.getLogger(__name__)
 
 _GENERATED_DIR = Path(__file__).resolve().parent.parent / "generated"
+# Starlette StaticFiles requires this path to exist when the app is built (import
+# time). Lifespan runs later, so a fresh clone / CI without `generated/` would
+# raise RuntimeError on import of this module.
+_GENERATED_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @asynccontextmanager

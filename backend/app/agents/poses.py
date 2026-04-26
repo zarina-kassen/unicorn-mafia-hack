@@ -44,5 +44,6 @@ def get_pose_generation_agent() -> Agent[PoseAgentDeps, list[PoseTargetSpec]]:
         deps_type=PoseAgentDeps,
         output_type=list[PoseTargetSpec],
         model_settings=model_settings,
+        retries=3,
         system_prompt="You are a pose generation expert. Generate diverse, flattering pose targets for portrait photography based on a reference image.",
     )

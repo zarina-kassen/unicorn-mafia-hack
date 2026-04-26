@@ -559,6 +559,9 @@ async def create_pose_variants(
                 "Agent output validation failed; falling back to template specs"
             )
             raw_agent = []
+        except Exception:
+            logger.exception("Agent failed; falling back to template-only specs")
+            raw_agent = []
         agent_specs = _agent_specs_with_fallbacks(
             raw_agent,
             POSE_VARIANT_AGENT_SLOTS,

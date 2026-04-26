@@ -83,12 +83,14 @@ async def get_image(job_id: str, filename: str) -> tuple[bytes, str] | None:
 async def cleanup_old_images() -> None:
     """Delete images older than GENERATED_TTL_SECONDS."""
     cutoff = datetime.now() - timedelta(seconds=settings.generated_ttl_seconds)
-    result = (
-        await GeneratedImage.delete().where(GeneratedImage.created_at < cutoff).run()
+    deleted = (
+        await GeneratedImage.delete()
+        .where(GeneratedImage.created_at < cutoff)
+        .returning(GeneratedImage.id)
+        .run()
     )
-    deleted = len(result) if isinstance(result, list) else int(result or 0)
-    if deleted > 0:
-        logger.info("Cleaned up %d old images", deleted)
+    if len(deleted) > 0:
+        logger.info("Cleaned up %d old images", len(deleted))
 
 
 async def start_cleanup_task() -> None:

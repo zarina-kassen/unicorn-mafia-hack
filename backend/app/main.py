@@ -10,8 +10,10 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .billing import init_billing_store
 from .config import settings, validate_config
 from .routes import (
+    billing_router,
     health_router,
     images_router,
     memory_router,
@@ -30,6 +32,7 @@ async def lifespan(app: FastAPI):
     """Manage application lifespan: DB init and cleanup task."""
     # Startup
     validate_config()
+    init_billing_store()
     await init_db()
     cleanup_task = asyncio.create_task(start_cleanup_task())
     yield
@@ -52,6 +55,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(billing_router)
 app.include_router(health_router)
 app.include_router(images_router)
 app.include_router(memory_router)

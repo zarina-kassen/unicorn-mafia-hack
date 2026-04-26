@@ -5,9 +5,11 @@ import {
   useRef,
   useState,
 } from 'react'
+import { useAuth } from '@clerk/react'
 import { Images } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { getBillingAccount, type BillingAccount } from '@/api/billing'
 import {
   compositeMirroredVideoWithOverlay,
   makeCaptureFilename,
@@ -22,6 +24,7 @@ import { CameraTopBar } from '@/components/CameraTopBar'
 import { PoseGallery } from '@/components/PoseGallery'
 import { PoseOverlay } from '@/components/PoseOverlay'
 import { ShutterDock } from '@/components/ShutterDock'
+import { WalletSheet } from '@/components/WalletSheet'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -32,11 +35,42 @@ interface SessionCapture {
 }
 
 export function CameraScreen() {
+  const { getToken, isSignedIn } = useAuth()
   const videoRef = useRef<HTMLVideoElement>(null)
   const poseOverlayCanvasRef = useRef<HTMLCanvasElement>(null)
   const { state: cameraState, request: requestCamera } = useCamera(videoRef)
   const poseVariants = usePoseVariants()
   const isMdUp = useMediaQuery('(min-width: 768px)')
+  const [walletOpen, setWalletOpen] = useState(false)
+  const [billingAccount, setBillingAccount] = useState<BillingAccount | null>(null)
+
+  const refreshBilling = useCallback(async () => {
+    if (!isSignedIn) {
+      setBillingAccount(null)
+      return
+    }
+    try {
+      const account = await getBillingAccount(getToken)
+      setBillingAccount(account)
+    } catch {
+      setBillingAccount(null)
+    }
+  }, [getToken, isSignedIn])
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      void refreshBilling()
+    }, 0)
+    return () => clearTimeout(t)
+  }, [refreshBilling])
+
+  useEffect(() => {
+    if (!poseVariants.isSuccess) return
+    const t = window.setTimeout(() => {
+      void refreshBilling()
+    }, 0)
+    return () => clearTimeout(t)
+  }, [poseVariants.isSuccess, refreshBilling])
 
   const poses = useMemo(() => poseVariants.data ?? [], [poseVariants.data])
   const outlines = poseVariants.outlines
@@ -251,7 +285,10 @@ export function CameraScreen() {
             onPrevPose={onPrevPose}
             onNextPose={onNextPose}
             onClearSelection={onClearSelection}
+            onWalletOpen={() => setWalletOpen(true)}
             poseCount={poses.length}
+            creditBalance={billingAccount?.balance ?? null}
+            isSignedIn={isSignedIn ?? false}
           />
         )}
 
@@ -285,7 +322,10 @@ export function CameraScreen() {
                 onPrevPose={onPrevPose}
                 onNextPose={onNextPose}
                 onClearSelection={onClearSelection}
+                onWalletOpen={() => setWalletOpen(true)}
                 poseCount={poses.length}
+                creditBalance={billingAccount?.balance ?? null}
+                isSignedIn={isSignedIn ?? false}
               />
 
               <ShutterDock
@@ -335,6 +375,12 @@ export function CameraScreen() {
           </Button>
         </>
       ) : null}
+      <WalletSheet
+        open={walletOpen}
+        onClose={() => setWalletOpen(false)}
+        getToken={getToken}
+        onBalanceUpdated={refreshBilling}
+      />
     </div>
   )
 }

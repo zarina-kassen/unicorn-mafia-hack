@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, RotateCcw, Sparkles } from 'lucide-react'
+import { ChevronLeft, ChevronRight, RotateCcw, Sparkles, Wallet } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -15,7 +15,10 @@ interface CameraTopBarProps {
   onPrevPose: () => void
   onNextPose: () => void
   onClearSelection: () => void
+  onWalletOpen: () => void
   poseCount: number
+  creditBalance: number | null
+  isSignedIn: boolean
   className?: string
 }
 
@@ -26,7 +29,10 @@ export function CameraTopBar({
   onPrevPose,
   onNextPose,
   onClearSelection,
+  onWalletOpen,
   poseCount,
+  creditBalance,
+  isSignedIn,
   className,
 }: CameraTopBarProps) {
   const navDisabled = poseCount < 2 || galleryBusy
@@ -91,23 +97,49 @@ export function CameraTopBar({
         </Tooltip>
       </div>
 
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            size="sm"
-            disabled={galleryBusy}
-            onClick={onGenerate}
-            className="gap-1.5 rounded-full border-cam-button-border bg-cam-button-face font-black text-cam-inverse shadow-cam-button hover:bg-cam-button-face/90"
+      <div className="flex items-center gap-1.5">
+        {isSignedIn && creditBalance !== null ? (
+          <span
+            className="min-w-9 rounded-full border border-white/20 bg-black/65 px-2.5 py-1.5 text-center text-xs font-semibold tabular-nums text-white/90 backdrop-blur-xl"
+            title="Credits balance"
           >
-            <Sparkles className="size-3.5" />
-            {generationLabel}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">
-          Capture fresh pose ideas from the current frame
-        </TooltipContent>
-      </Tooltip>
+            {creditBalance}
+          </span>
+        ) : null}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="rounded-full border border-white/15 bg-black/45 text-cam-ink backdrop-blur-md hover:bg-black/55"
+              onClick={onWalletOpen}
+              aria-label="Credits and top up"
+            >
+              <Wallet className="size-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Credits &amp; top up</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              size="sm"
+              disabled={galleryBusy}
+              onClick={onGenerate}
+              className="gap-1.5 rounded-full border-cam-button-border bg-cam-button-face font-black text-cam-inverse shadow-cam-button hover:bg-cam-button-face/90"
+            >
+              <Sparkles className="size-3.5" />
+              {generationLabel}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            Capture fresh pose ideas from the current frame
+          </TooltipContent>
+        </Tooltip>
+      </div>
     </div>
   )
 }

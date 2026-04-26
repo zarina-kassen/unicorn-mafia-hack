@@ -20,6 +20,7 @@ dependencies = [
     "mubit-sdk>=0.7.0",
     "openrouter>=0.9.1",
     "Pillow>=10.0",
+    "stripe>=12.5.0",
 ]
 
 [dependency-groups]
@@ -29,3 +30,6 @@ dev = [
     "ruff>=0.15.0",
     "ty>=0.0.32",
 ]
+
+[tool.ty.src]
+exclude = ["app/storage.py", "app/memory_onboarding.py"]

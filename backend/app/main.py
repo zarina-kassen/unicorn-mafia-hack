@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="frame-mog", lifespan=lifespan)
 
-logfire.instrument_fastapi(app)
+logfire.instrument_fastapi(app, excluded_urls="health")
 
 app.add_middleware(
     CORSMiddleware,

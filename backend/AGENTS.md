@@ -73,7 +73,7 @@ uvx ty check .
 ### Routes
 
 - Every API route must use `Depends(require_auth)` — no unauthenticated endpoints
-  (except `/health`).
+  (except `/health` and the root `/` redirect to `/health`).
 - Return typed Pydantic models via `response_model=...` on route decorators.
 - Use `async def` for routes that `await` anything; plain `def` is fine for
   synchronous endpoints.

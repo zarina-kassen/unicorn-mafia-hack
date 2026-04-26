@@ -8,6 +8,7 @@ COPY pyproject.toml uv.lock .python-version ./
 
 RUN uv sync --frozen --no-dev
 
+COPY piccolo_conf.py ./
 COPY app/ app/
 
 EXPOSE 8000

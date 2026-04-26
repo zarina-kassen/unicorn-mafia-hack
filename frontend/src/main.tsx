@@ -6,15 +6,20 @@ import { RouterProvider } from '@tanstack/react-router'
 import './index.css'
 import { router } from './router'
 import { ErrorBoundary } from './ErrorBoundary.tsx'
+import { Toaster } from '@/components/ui/sonner'
+import { TooltipProvider } from '@/components/ui/tooltip'
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 const queryClient = new QueryClient()
 
 const app = (
   <QueryClientProvider client={queryClient}>
-    <ErrorBoundary>
-      <RouterProvider router={router} />
-    </ErrorBoundary>
+    <TooltipProvider delayDuration={200}>
+      <ErrorBoundary>
+        <RouterProvider router={router} />
+        <Toaster position="top-center" richColors closeButton />
+      </ErrorBoundary>
+    </TooltipProvider>
   </QueryClientProvider>
 )
 

@@ -262,230 +262,50 @@
   }
 }
 
-/* ==========================================================================
-   Component Styles
-   Complex visual styles kept as CSS — keyframes, multi-gradient backgrounds,
-   pseudo-elements, mask-image, and compound box-shadows.
-   All colors reference design-system tokens.
-   ========================================================================== */
+/* Keyframes + utilities used by React components (shutter flash, skeleton shimmer) */
 
-.stage-two-shell {
-  width: 100%;
-  max-width: none;
-  min-height: 100dvh;
-  min-height: 100svh;
-  margin: 0;
-  padding: 0;
+@keyframes cam-shutter-flash {
+  0% {
+    opacity: 0;
+  }
+  22% {
+    opacity: 0.96;
+  }
+  40% {
+    opacity: 0.96;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
-.camera-preview {
-  position: relative;
-  width: 100%;
-  min-height: 100dvh;
-  min-height: 100svh;
-  overflow: hidden;
-  border: none;
-  border-radius: 0;
-  background: var(--cam-surface);
-  box-shadow: none;
-  isolation: isolate;
+.cam-shutter-flash-active {
+  animation: cam-shutter-flash 0.16s ease-out forwards;
 }
 
-.camera-vignette {
-  @apply absolute inset-0 pointer-events-none;
-  background:
-    linear-gradient(180deg, var(--cam-vignette-top) 0%, transparent 25%),
-    linear-gradient(0deg, var(--cam-vignette-bottom) 0%, transparent 34%),
-    radial-gradient(circle at center, transparent 46%, var(--cam-vignette-edge) 100%);
+@keyframes skeleton-sweep {
+  from {
+    transform: translateX(-70%);
+  }
+  to {
+    transform: translateX(70%);
+  }
 }
 
-.alignment-pill {
-  @apply rounded-full border border-cam-hairline bg-black/[0.38] px-[11px] py-[7px] text-[0.76rem] font-[850] text-white/90 backdrop-blur-[18px];
-}
-
-.alignment-pill.close {
-  border-color: var(--cam-ok-border);
-  color: var(--cam-ok);
-}
-
-.alignment-pill.adjusting {
-  border-color: var(--cam-warn-border);
-  color: var(--cam-accent);
-}
-
-.generate-button {
-  @apply min-w-[86px] cursor-pointer rounded-full border border-cam-button-border bg-cam-button-face px-3 py-2 text-[0.76rem] font-[950] text-cam-inverse;
-  box-shadow: var(--shadow-cam-button);
-}
-
-.generate-button:disabled {
-  @apply cursor-progress opacity-70;
-}
-
-.camera-launch {
-  @apply absolute inset-0 z-[3] flex flex-col items-center justify-center gap-[15px] p-7 text-center;
-  background:
-    radial-gradient(circle at 50% 22%, var(--cam-launch-glow-center), transparent 18%),
-    radial-gradient(circle at 18% 72%, var(--cam-launch-glow-warm), transparent 23%),
-    linear-gradient(180deg, var(--cam-launch-dark-start), var(--cam-launch-dark-end));
-}
-
-.launch-mark {
-  width: 82px;
-  height: 118px;
-  border: 3px solid var(--cam-active-border);
-  border-radius: 52% 48% 46% 54% / 36% 40% 60% 64%;
-  box-shadow:
-    0 0 22px var(--cam-glow-medium),
-    inset 0 0 22px var(--cam-glow-faint);
-  transform: rotate(-5deg);
-}
-
-.camera-launch-btn:active,
-.pose-card:active {
-  transform: scale(0.98);
-}
-
-.pose-gallery {
-  @apply mt-[18px] overflow-hidden rounded-[30px] border border-cam-hairline backdrop-blur-[22px];
-  padding: 16px 0 18px;
-  background:
-    linear-gradient(180deg, var(--cam-panel-highlight), transparent 42%),
-    var(--cam-panel);
-  box-shadow: var(--shadow-cam-panel);
-}
-
-.gallery-rail {
-  @apply w-full overflow-x-auto overflow-y-hidden;
-  scrollbar-width: thin;
-  -ms-overflow-style: auto;
-}
-
-.gallery-rail::-webkit-scrollbar {
-  height: 6px;
-}
-
-.gallery-rail::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.22);
-}
-
-.gallery-track {
-  @apply flex w-max gap-3 px-4;
-}
-
-.pose-card {
-  width: clamp(116px, 32vw, 152px);
-  @apply cursor-pointer overflow-hidden rounded-[22px] border border-cam-subtle-border bg-white/5 p-0 text-left text-cam-ink;
-  box-shadow: var(--shadow-cam-card);
-  transition:
-    border-color 180ms ease,
-    box-shadow 180ms ease,
-    transform 180ms ease;
-}
-
-.pose-card.active {
-  border-color: var(--cam-active-border);
-  box-shadow: var(--shadow-cam-card-active);
-}
-
-.pose-card.skeleton {
-  position: relative;
-  height: calc(clamp(116px, 32vw, 152px) * 1.58);
-  cursor: default;
-  overflow: hidden;
-}
-
-.pose-card.skeleton::before {
-  content: '';
-  @apply absolute inset-0;
+.cam-skeleton-shimmer {
   background:
     linear-gradient(90deg, transparent, var(--cam-shimmer-peak), transparent),
     linear-gradient(180deg, var(--cam-shimmer-start), var(--cam-shimmer-end));
   animation: skeleton-sweep 1.3s ease-in-out infinite;
 }
 
-.pose-card.skeleton span {
-  @apply absolute bottom-3 left-2.5 right-6 h-3 rounded-full bg-cam-hairline p-0;
-}
-
-.pose-card img {
-  @apply block w-full object-cover;
-  aspect-ratio: 2 / 3;
-}
-
-.pose-card span {
-  @apply block px-2.5 pb-[11px] pt-[9px] text-[0.78rem] font-[850] leading-[1.12] text-white/[0.88];
-}
-
-.memory-seed-row,
-.memory-controls-row {
-  @apply flex items-center gap-2 px-4 mb-2.5;
-}
-
-.memory-controls-row {
-  @apply flex-wrap;
-}
-
-.memory-status {
-  @apply px-4 pb-2 text-[0.75rem] text-white/75;
-}
-
-/* ==========================================================================
-   Keyframes
-   ========================================================================== */
-
-@keyframes skeleton-sweep {
-  from { transform: translateX(-70%); }
-  to { transform: translateX(70%); }
-}
-
-/* ==========================================================================
-   Responsive — Desktop two-column layout
-   ========================================================================== */
-
-@media (min-width: 760px) {
-  .stage-two-shell {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
-    align-items: stretch;
-    gap: 18px;
-    width: min(100%, 980px);
-    max-width: 980px;
-    margin: 0 auto;
-    padding: max(28px, env(safe-area-inset-top, 0px)) var(--page-pad)
-      max(18px, env(safe-area-inset-bottom, 0px));
-  }
-
-  .camera-preview {
-    height: min(78dvh, 760px);
-    min-height: min(78dvh, 760px);
-    border: 1px solid var(--cam-hairline);
-    border-radius: 34px;
-    box-shadow: var(--shadow-cam-preview);
-  }
-
-  .pose-gallery {
-    @apply mt-0 flex min-h-0 flex-col;
-  }
-
-  .gallery-rail {
-    @apply flex-1 overflow-y-auto overflow-x-hidden;
-  }
-
-  .gallery-track {
-    flex-direction: column;
-    width: 100%;
-    max-width: 100%;
-  }
-
-  .pose-card {
-    @apply w-full;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .pose-card.skeleton::before {
+  .cam-shutter-flash-active {
+    animation: none;
+    opacity: 0;
+  }
+
+  .cam-skeleton-shimmer {
     animation: none;
   }
 }

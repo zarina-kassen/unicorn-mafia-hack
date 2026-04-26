@@ -2,6 +2,10 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# piccolo_conf.py lives at /app/piccolo_conf.py; adding /app to PYTHONPATH
+# ensures Piccolo's engine_finder() can import it as a module.
+ENV PYTHONPATH=/app
+
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 COPY pyproject.toml uv.lock .python-version ./

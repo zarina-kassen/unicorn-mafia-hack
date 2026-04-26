@@ -279,6 +279,9 @@ export function CameraScreen() {
             lastCapturePreviewUrl={lastSessionCapture?.previewUrl ?? null}
             onSaveLastAgain={onSaveLastCaptureAgain}
             onOpenGallery={() => setGalleryOpen(true)}
+            onGenerate={handleGenerate}
+            hasPoses={poses.length > 0}
+            galleryBusy={galleryBusy}
           />
         </>
       )}

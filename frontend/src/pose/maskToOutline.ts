@@ -153,6 +153,25 @@ function keepLargestConnectedComponent(
   return out
 }
 
+/** Expand foreground by 1px (max of 3×3) to bridge hairline breaks in LLM masks. */
+function dilateMax3x3(values: Float32Array, width: number, height: number): Float32Array {
+  const out = new Float32Array(values.length)
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      let m = 0
+      for (let ky = -1; ky <= 1; ky += 1) {
+        const sy = Math.max(0, Math.min(height - 1, y + ky))
+        for (let kx = -1; kx <= 1; kx += 1) {
+          const sx = Math.max(0, Math.min(width - 1, x + kx))
+          m = Math.max(m, values[sy * width + sx])
+        }
+      }
+      out[y * width + x] = m
+    }
+  }
+  return out
+}
+
 function estimatePerimeter(points: NormPoint[]): number {
   if (points.length < 2) return 0
   let sum = 0
@@ -237,13 +256,27 @@ export function outlineFromPersonMaskGrid(
 
   const blurred = gaussianBlur3x3(values, width, height)
   const refinedMask = keepLargestConnectedComponent(blurred, width, height, 0.38)
+  const bridged = dilateMax3x3(refinedMask, width, height)
+
+  // Pad so the silhouette does not touch the grid edge; otherwise marching squares
+  // often returns an open or pinched contour at the crown when hair hits y=0.
+  const border = 2
+  const pw = width + 2 * border
+  const ph = height + 2 * border
+  const padded = new Float32Array(pw * ph)
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      padded[(y + border) * pw + (x + border)] = bridged[y * width + x]
+    }
+  }
 
   const contour = contours()
-    .size([width, height])
+    .size([pw, ph])
     .smooth(true)
-    .thresholds([0.5])
+    // Slightly below 0.5 recovers a bit more fringe (fewer “gaps” after blur).
+    .thresholds([0.48])
 
-  const layers = contour(Array.from(refinedMask))
+  const layers = contour(Array.from(padded))
   const layer = layers[0]
   if (!layer?.coordinates?.length) return null
 
@@ -262,8 +295,8 @@ export function outlineFromPersonMaskGrid(
   if (!best || bestArea < width * height * 0.0005) return null
 
   const norm: NormPoint[] = best.map(([px, py]) => ({
-    x: clamp01(px / width),
-    y: clamp01(py / height),
+    x: clamp01((px - border) / width),
+    y: clamp01((py - border) / height),
   }))
 
   if (norm.length > 0) {

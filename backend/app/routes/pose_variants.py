@@ -125,10 +125,14 @@ def _downscale_data_url_for_vision(data_url: str) -> str:
 
 def _outline_prompt_text() -> str:
     return (
-        "Look at this photo. Output ONE closed polygon that outlines the main person "
-        "in a loose, hand-drawn chalk-line style — like a thick white stroke around "
-        "the subject, NOT a tight pixel-perfect segmentation.\n"
+        "Look at this photo. Output ONE closed polygon that outlines ONLY the main human "
+        "subject in a loose, hand-drawn chalk-line style — a thick stroke around the person, "
+        "NOT room geometry.\n"
         "Rules:\n"
+        "- The loop must hug the person (head, hair, shoulders, torso, arms as visible). "
+        "Never follow walls, ceiling beams, corrugated panels, pipes, lights, windows, shelves, "
+        "or any background edges — those must stay OUTSIDE the polygon.\n"
+        "- If several people appear, choose the primary selfie subject (usually largest / most central).\n"
         "- Use between 18 and 26 vertices (stay within the allowed range).\n"
         "- x and y are normalized to the full image: 0=left/top, 1=right/bottom.\n"
         "- Order vertices consistently around the silhouette (clockwise).\n"

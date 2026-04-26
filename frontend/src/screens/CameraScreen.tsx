@@ -94,34 +94,6 @@ export function CameraScreen() {
 
   const lastSessionCapture = sessionCaptures[0] ?? null
 
-  const bottomHintPrimary = useMemo(() => {
-    if (galleryBusy) {
-      if (poseVariants.streamPhase === 'planning') {
-        return 'Choosing pose ideas for you…'
-      }
-      if (poseVariants.streamPhase === 'generating') {
-        return 'Rendering pose photos as they finish…'
-      }
-      return 'Hang tight while new poses are generated.'
-    }
-    if (selectedPose) {
-      if (guideReadyForSelected) {
-        return `${selectedPose.instruction} Tap the shutter when you are aligned to save a photo.`
-      }
-      return `${selectedPose.instruction} Preparing your pose guide…`
-    }
-    if (poses.length > 0) {
-      return 'Choose a pose in the gallery to show its outline guide.'
-    }
-    return 'Generate poses, then pick one to match.'
-  }, [
-    galleryBusy,
-    poseVariants.streamPhase,
-    selectedPose,
-    guideReadyForSelected,
-    poses.length,
-  ])
-
   const handleGenerate = useCallback(() => {
     if (cameraState.status !== 'ready' || !videoRef.current || galleryBusy)
       return
@@ -315,28 +287,6 @@ export function CameraScreen() {
                 onClearSelection={onClearSelection}
                 poseCount={poses.length}
               />
-
-              <div
-                className={cn(
-                  'pointer-events-none absolute left-4 right-4 z-[12] flex flex-col items-center gap-2 text-center',
-                  'bottom-[calc(200px+env(safe-area-inset-bottom,0px))] md:static md:bottom-auto md:z-auto md:mt-3 md:px-2',
-                )}
-                aria-live="polite"
-                style={{ textShadow: 'var(--shadow-cam-text-heavy)' }}
-              >
-                <span
-                  className={cn(
-                    'max-w-md rounded-full border border-cam-hairline bg-black/45 px-4 py-2.5 text-sm font-extrabold text-cam-ink backdrop-blur-md md:text-base',
-                  )}
-                >
-                  {bottomHintPrimary}
-                </span>
-                {lastSessionCapture ? (
-                  <span className="max-w-xs text-xs text-cam-error-soft">
-                    Tap the round thumbnail to save your last capture again.
-                  </span>
-                ) : null}
-              </div>
 
               <ShutterDock
                 variant={shutterVariant}

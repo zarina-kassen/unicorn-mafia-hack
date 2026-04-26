@@ -86,6 +86,7 @@ cd frontend && bun run dev
 | `AGENT_MODEL`                | backend  | OpenRouter slug for Pydantic AI pose-target planner (default `meta-llama/llama-3.3-70b-instruct`) |
 | `POSE_GUIDE_MODEL`           | backend  | OpenRouter vision+JSON outline slug (default `openai/gpt-4o-mini`; not FLUX) |
 | `FAST_IMAGE_MODEL`           | backend  | OpenRouter FLUX slug for pose-variant images (default `black-forest-labs/flux.2-klein-4b`; `IMAGE_MODEL` alias) |
+| `LOGFIRE_TOKEN`              | backend  | Pydantic Logfire write token for observability (optional; console-only when unset) |
 
 ## Commands
 

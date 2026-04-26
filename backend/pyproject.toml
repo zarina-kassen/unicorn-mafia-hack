@@ -20,6 +20,7 @@ dependencies = [
     "mubit-sdk>=0.7.0",
     "openrouter>=0.9.1",
     "Pillow>=10.0",
+    "logfire[asyncpg,fastapi,httpx]>=4.32.1",
 ]
 
 [dependency-groups]

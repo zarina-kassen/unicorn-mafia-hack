@@ -30,6 +30,7 @@ async def require_auth(request: Request) -> str:
             request,
             AuthenticateRequestOptions(
                 secret_key=settings.clerk_secret_key,
+                jwt_key=settings.clerk_jwt_key or None,
                 authorized_parties=settings.clerk_authorized_parties_list,
             ),
         )

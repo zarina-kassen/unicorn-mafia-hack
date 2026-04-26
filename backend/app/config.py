@@ -141,6 +141,10 @@ class Settings(BaseSettings):
         default="",
         description="Clerk secret key for authentication",
     )
+    clerk_jwt_key: str = Field(
+        default="",
+        description="Optional Clerk JWT verification public key (PEM)",
+    )
     clerk_authorized_parties: str = Field(
         default="http://localhost:5173,http://127.0.0.1:5173",
         description="Comma-separated list of authorized parties for Clerk",

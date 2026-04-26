@@ -30,13 +30,8 @@ def get_pose_generation_agent() -> Agent[PoseAgentDeps, list[PoseTargetSpec]]:
     Returns:
         A cached Agent instance configured for pose generation.
     """
-    # Set environment variables for OpenRouter compatibility
-    import os
-
-    os.environ["OPENAI_API_KEY"] = settings.openrouter_api_key
-    os.environ["OPENAI_BASE_URL"] = settings.openrouter_base_url
-
     # OpenAI-compatible client → OpenRouter; model slug is any OpenRouter id (not necessarily openai/*).
+    # OPENAI_API_KEY / OPENAI_BASE_URL are set once at startup in main.py lifespan.
     model = OpenAIChatModel(settings.agent_model, provider="openai")
     model_settings: ModelSettings = {"max_tokens": settings.agent_max_tokens}
     return Agent[PoseAgentDeps, list[PoseTargetSpec]](

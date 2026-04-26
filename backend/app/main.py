@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 
 from contextlib import asynccontextmanager
 
@@ -23,6 +24,14 @@ from .routes import (
 from .storage.database import init_db, start_cleanup_task
 
 load_dotenv(override=True)
+
+# Expose OpenRouter credentials as OpenAI-compatible env vars so that any
+# library relying on the standard ``OPENAI_API_KEY`` (Pydantic AI, the
+# OpenRouter SDK's internal openai shim, etc.) picks them up regardless of
+# which endpoint is hit first.
+if settings.openrouter_api_key:
+    os.environ.setdefault("OPENAI_API_KEY", settings.openrouter_api_key)
+    os.environ.setdefault("OPENAI_BASE_URL", settings.openrouter_base_url)
 
 logfire.configure(service_name="frame-mog")
 logfire.instrument_pydantic_ai()

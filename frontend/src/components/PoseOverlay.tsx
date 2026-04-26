@@ -54,6 +54,26 @@ function traceSmoothClosedContour(ctx: CanvasRenderingContext2D, points: Point[]
   ctx.closePath()
 }
 
+/**
+ * `traceSmoothClosedContour` assumes a ring without a duplicated closing vertex.
+ * Closed rings from d3/resampling often repeat the first point at the end, which
+ * collapses control points and can leave a visible gap in the stroke.
+ */
+function unwrapClosedRingForStroke(points: Point[]): Point[] {
+  if (points.length < 4) return points
+  const first = points[0]
+  const last = points[points.length - 1]
+  let perim = 0
+  for (let i = 1; i < points.length; i += 1) {
+    perim += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y)
+  }
+  const tol = Math.max(1.5, perim * 0.002)
+  if (Math.hypot(first.x - last.x, first.y - last.y) <= tol) {
+    return points.slice(0, -1)
+  }
+  return points
+}
+
 function prepareOutline(outline: PoseOutlineResponse): PreparedOutline | null {
   const poly = outline.polygon
   if (poly.length < 3) return null
@@ -107,13 +127,15 @@ function drawSilhouette(
     x: dx + p.x * drawW,
     y: dy + p.y * drawH,
   }))
+  const ring = unwrapClosedRingForStroke(projected)
+  const strokePts = ring.length >= 3 ? ring : projected
 
   ctx.save()
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
 
   ctx.beginPath()
-  traceSmoothClosedContour(ctx, projected)
+  traceSmoothClosedContour(ctx, strokePts)
   ctx.filter = `blur(${glow}px)`
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.26)'
   ctx.lineWidth = lineWidth * 1.8
@@ -122,7 +144,7 @@ function drawSilhouette(
   ctx.stroke()
 
   ctx.beginPath()
-  traceSmoothClosedContour(ctx, projected)
+  traceSmoothClosedContour(ctx, strokePts)
   ctx.filter = 'none'
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.98)'
   ctx.lineWidth = lineWidth

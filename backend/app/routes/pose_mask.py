@@ -30,12 +30,16 @@ router = APIRouter(prefix="/api/pose-mask", tags=["pose-mask"])
 _MASK_PROMPT = (
     "Create a person segmentation matte from this image.\n"
     "Output exactly one mask image with these strict rules:\n"
-    "- Main person silhouette must be solid white (#FFFFFF)\n"
-    "- Background must be solid black (#000000), no checkerboard pattern\n"
-    "- No text, no borders, no shadows, no gradients, no background remnants\n"
-    "- Preserve the SAME subject pose, camera angle, framing, position, and scale from source\n"
-    "- Do NOT re-center, re-pose, re-frame, or beautify the subject\n"
-    "- Output must be pixel-aligned to the original subject silhouette"
+    "- Main person silhouette must be solid white (#FFFFFF) only — no gray, no soft edges in the mask.\n"
+    "- Background must be solid black (#000000), full frame — no checkerboard, no gradients, no shadows.\n"
+    "- White may include ONLY the human: skin, hair, clothing, glasses, and small props they clearly hold. "
+    "One primary selfie subject only.\n"
+    "- Black must include ALL non-person pixels: walls, ceiling, beams, pipes, lights, windows, doors, "
+    "furniture, floor, scenery. Do NOT trace ceiling grids, corrugated metal, shelves, or room edges in white.\n"
+    "- No text, borders, labels, or extra shapes — exactly one white foreground blob on black.\n"
+    "- Preserve the SAME subject pose, camera angle, framing, position, and scale from the source.\n"
+    "- Do NOT re-center, re-pose, re-frame, or beautify the subject.\n"
+    "- Pixel-align the white region to the real person only, not the room."
 )
 
 

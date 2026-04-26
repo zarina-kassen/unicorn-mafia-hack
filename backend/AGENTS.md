@@ -19,7 +19,7 @@ app/
 ├── schemas.py         # All Pydantic models (Landmark, PoseContext, GuidanceResponse, …)
 ├── templates.py       # Predefined pose template metadata (TEMPLATES list)
 ├── auth.py            # require_auth dependency — Clerk JWT verification
-├── pose_variants.py   # Background job logic for pose-variant generation
+├── routes/pose_variants.py  # POST /api/pose-variants — SSE stream (image + outline per pose)
 └── mubit_memory.py    # Mubit SDK integration for user memory
 tests/
 ├── __init__.py
@@ -83,7 +83,7 @@ uvx ty check .
   `@lru_cache`). This keeps imports and tests fast.
 - The system prompt lives in `SYSTEM_PROMPT` at module level — keep it short and
   structured.
-- Model is configured via `AGENT_MODEL` env var (default `gateway/openai:gpt-5.3`).
+- `AGENT_MODEL` powers the Pydantic AI pose-target planner; `POSE_GUIDE_MODEL` + `FAST_IMAGE_MODEL` control outline + image generation on OpenRouter.
 
 ### Error handling
 

@@ -1,4 +1,4 @@
-# frame-mog — frontend (React + Vite + MediaPipe)
+# frame-mog — frontend (React + Vite + client-side pose)
 
 See the repo root [`README.md`](../README.md) for product context and
 architecture.
@@ -16,10 +16,10 @@ bun run dev
 ```
 
 Opens at [http://localhost:5173](http://localhost:5173). Dev server
-proxies `/api` and `/health` to `http://localhost:8000`, so start the
-backend (`cd ../backend && uv run uvicorn app.main:app --reload`) first
-for full agent output. Without it, the app still renders the live
-MediaPipe overlay using local template matching.
+proxies `/api` and `/health` to `http://localhost:8000` with **no proxy
+timeout** so long-lived **SSE** responses from `POST /api/pose-variants`
+are not cut off. Start the backend (`cd ../backend && uv run uvicorn app.main:app --reload`)
+for pose generation.
 
 ## Scripts
 

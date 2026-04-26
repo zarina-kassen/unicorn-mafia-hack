@@ -81,20 +81,21 @@ def _extract_single(
     b64 = base64.b64encode(image.data).decode("ascii")
     data_url = f"data:{image.content_type};base64,{b64}"
     try:
-        response = client.responses.create(
+        # Use the standard chat completions API instead of responses API for better type compatibility
+        response = client.chat.completions.create(
             model=VISION_MODEL,
-            input=[
+            messages=[
                 {
                     "role": "user",
                     "content": [
-                        {"type": "input_text", "text": _prompt_for(image.filename)},
-                        {"type": "input_image", "image_url": data_url},
+                        {"type": "text", "text": _prompt_for(image.filename)},
+                        {"type": "image_url", "image_url": {"url": data_url}},
                     ],
                 }
             ],
-            text={"format": {"type": "json_object"}},
+            response_format={"type": "json_object"},
         )
-        text = (response.output_text or "").strip()
+        text = (response.choices[0].message.content or "").strip()
         if not text:
             return None
         parsed = json.loads(text)

@@ -81,7 +81,7 @@ cd frontend && bun run dev
 | `CLERK_AUTHORIZED_PARTIES`   | backend  | Comma-separated allowed origins  |
 | `VITE_CLERK_PUBLISHABLE_KEY` | frontend | Clerk frontend key               |
 | `VITE_BACKEND_URL`           | frontend | Backend base URL (empty for proxy)|
-| `AGENT_MODEL`                | backend  | LLM model string (default `gateway/openai:gpt-5.3`) |
+| `AGENT_MODEL`                | backend  | OpenRouter LLM slug (default `openai/gpt-5.4-mini`) |
 
 ## Commands
 

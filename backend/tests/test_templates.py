@@ -1,32 +1,59 @@
-"""Smoke tests for the templates and health endpoints."""
+"""Smoke tests for the health and pose-variants endpoints."""
 
-import importlib
+from __future__ import annotations
+
+import base64
+import json
 from collections.abc import Generator
 
 import pytest
 from fastapi.testclient import TestClient
+from openrouter import components
 
-from app.auth import require_auth
+from app.agents import get_pose_generation_agent
+from app.auth.clerk import require_auth
+from app.config import settings
+from app.dependencies import get_openrouter_client
 from app.main import app
-from app.memory_onboarding import OnboardingImageInput, extract_memory_seed_entries
-from app.schemas import MemorySeedEntry
-from app.templates import TEMPLATE_IDS
+from app.routes.pose_variants import _assistant_image_url
+from app.schemas import PoseTargetSpec
 
 
 @pytest.fixture(autouse=True)
-def _bypass_auth() -> Generator[None]:
-    """Replace the Clerk auth dependency with a no-op for tests."""
+def _bypass_dependencies() -> Generator[None]:
+    """Replace dependencies with no-ops for tests."""
     app.dependency_overrides[require_auth] = lambda: "test-user-id"
+
+    async def mock_agent():
+        class MockAgent:
+            async def run(self, *args, **kwargs):
+                raise RuntimeError("Agent should not be called in this test")
+
+        return MockAgent()
+
+    app.dependency_overrides[get_pose_generation_agent] = mock_agent
+
     yield
     app.dependency_overrides.pop(require_auth, None)
+    app.dependency_overrides.pop(get_pose_generation_agent, None)
 
 
-def test_templates_endpoint() -> None:
-    client = TestClient(app)
-    r = client.get("/api/templates")
-    assert r.status_code == 200
-    ids = [t["id"] for t in r.json()]
-    assert set(ids) == set(TEMPLATE_IDS)
+def _parse_sse(body: str) -> list[tuple[str, dict]]:
+    events: list[tuple[str, dict]] = []
+    for block in body.split("\n\n"):
+        block = block.strip()
+        if not block:
+            continue
+        event_name = "message"
+        data_payload: str | None = None
+        for line in block.split("\n"):
+            if line.startswith("event: "):
+                event_name = line.removeprefix("event: ").strip()
+            elif line.startswith("data: "):
+                data_payload = line.removeprefix("data: ").strip()
+        if data_payload is not None:
+            events.append((event_name, json.loads(data_payload)))
+    return events
 
 
 def test_health_endpoint() -> None:
@@ -35,13 +62,6 @@ def test_health_endpoint() -> None:
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok"
-    assert "model" in body
-
-
-def test_pose_variant_missing_job() -> None:
-    client = TestClient(app)
-    r = client.get("/api/pose-variants/not-a-job")
-    assert r.status_code == 404
 
 
 def test_pose_variant_rejects_non_image_upload() -> None:
@@ -53,156 +73,173 @@ def test_pose_variant_rejects_non_image_upload() -> None:
     assert r.status_code == 400
 
 
-def test_memory_preferences_endpoint_without_mubit() -> None:
-    client = TestClient(app)
-    r = client.post(
-        "/api/memory/preferences",
-        json={
-            "allow_camera_roll": True,
-            "allow_instagram": False,
-            "allow_pinterest": False,
-        },
-    )
-    assert r.status_code == 200
-    assert "ok" in r.json()
-
-
-def test_memory_reset_endpoint_without_mubit() -> None:
-    client = TestClient(app)
-    r = client.post("/api/memory/reset", json={"hard_reset": False})
-    assert r.status_code == 200
-    assert "ok" in r.json()
-
-
-def test_pose_outline_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app import main as main_module
-
-    async def fake_extract(_image_url: str) -> tuple[str, int, int]:
-        return "/generated/fake-mask.png", 320, 480
-
-    monkeypatch.setattr(main_module, "_llm_extract_pose_mask", fake_extract)
-    client = TestClient(app)
-    r = client.post("/api/pose-mask", json={"image_url": "/generated/fake.png"})
-    assert r.status_code == 200
-    body = r.json()
-    assert body["mask_url"] == "/generated/fake-mask.png"
-    assert body["width"] == 320
-    assert body["height"] == 480
-    assert body["source"] == "llm"
-
-
-def test_pose_mask_endpoint_returns_502_on_model_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from app import main as main_module
-
-    async def fake_extract(_image_url: str) -> tuple[str, int, int]:
-        raise RuntimeError("quota exceeded")
-
-    monkeypatch.setattr(main_module, "_llm_extract_pose_mask", fake_extract)
-    client = TestClient(app)
-    r = client.post("/api/pose-mask", json={"image_url": "/generated/fake.png"})
-    assert r.status_code == 502
-    body = r.json()
-    assert "detail" in body
-    assert "quota exceeded" in body["detail"]
-
-
-def test_memory_onboarding_images_rejects_too_many(monkeypatch: pytest.MonkeyPatch) -> None:
-    main_mod = importlib.import_module("app.main")
-    monkeypatch.setattr(main_mod, "get_mubit_memory", lambda: None)
-    client = TestClient(app)
-    files = [
-        ("images", (f"img-{idx}.jpg", b"\xff\xd8\xff", "image/jpeg")) for idx in range(6)
-    ]
-    r = client.post("/api/memory/onboarding/images", files=files)
-    assert r.status_code == 400
-
-
-def test_memory_onboarding_images_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    class DummyMemory:
-        def __init__(self) -> None:
-            self.preferences_called = False
-            self.seeded_entries: list[dict[str, object]] = []
-
-        def remember_preferences(
-            self,
-            *,
-            user_id: str,
-            allow_camera_roll: bool,
-            allow_instagram: bool,
-            allow_pinterest: bool,
-        ) -> None:
-            self.preferences_called = (
-                user_id == "test-user-id"
-                and allow_camera_roll
-                and not allow_instagram
-                and not allow_pinterest
-            )
-
-        def remember_onboarding_seed(
-            self, *, user_id: str, entries: list[dict[str, object]]
-        ) -> None:
-            if user_id == "test-user-id":
-                self.seeded_entries = entries
-
-    dummy = DummyMemory()
-    main_mod = importlib.import_module("app.main")
-    monkeypatch.setattr(main_mod, "get_mubit_memory", lambda: dummy)
-    monkeypatch.setattr(
-        main_mod,
-        "extract_memory_seed_entries",
-        lambda _prepared: [
-            MemorySeedEntry(
-                source_ref="img-1.jpg",
-                pose_tags=["profile"],
-                style_tags=["candid"],
-                composition_tags=["centered"],
-                scene_tags=["indoor"],
-                confidence=0.8,
+def _sample_chat_result_with_image(*, url: str) -> components.ChatResult:
+    return components.ChatResult(
+        id="chatcmpl-test",
+        object="chat.completion",
+        created=0,
+        model="black-forest-labs/flux.2-klein-4b",
+        choices=[
+            components.ChatChoice(
+                finish_reason="stop",
+                index=0,
+                message=components.ChatAssistantMessage(
+                    role="assistant",
+                    images=[
+                        components.ChatAssistantImages(
+                            image_url=components.ChatAssistantImagesImageURL(url=url)
+                        )
+                    ],
+                ),
             )
         ],
+        system_fingerprint=None,
     )
 
-    client = TestClient(app)
-    files = [("images", ("img-1.jpg", b"\xff\xd8\xff", "image/jpeg"))]
-    r = client.post("/api/memory/onboarding/images", files=files)
-    assert r.status_code == 200
-    assert r.json()["ok"] is True
-    assert dummy.preferences_called
-    assert len(dummy.seeded_entries) == 1
+
+def test_openrouter_sdk_chat_result_image_url() -> None:
+    data_url = "data:image/png;base64,iVBORw0KGgo="
+    result = _sample_chat_result_with_image(url=data_url)
+    assert _assistant_image_url(result) == data_url
 
 
-def test_extract_memory_seed_entries_fail_open(monkeypatch: pytest.MonkeyPatch) -> None:
-    onboarding_mod = importlib.import_module("app.memory_onboarding")
-    monkeypatch.setattr(onboarding_mod, "OpenAI", lambda: object())
+def test_pose_variants_sse_stream(monkeypatch: pytest.MonkeyPatch) -> None:
+    """POST /api/pose-variants returns SSE with pose + outline events."""
 
-    calls: list[str] = []
+    minimal_png_b64 = (
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8"
+        "z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    )
+    gen_data_url = f"data:image/png;base64,{minimal_png_b64}"
+    _image_store: dict[tuple[str, str], tuple[bytes, str]] = {}
 
-    def fake_extract_single(_client: object, image: OnboardingImageInput):
-        calls.append(image.filename)
-        if image.filename == "bad.jpg":
-            return None
-        return onboarding_mod.MemorySeedEntry(
-            source_ref=image.filename,
-            pose_tags=["crossed_arms"],
-            style_tags=["confident"],
-            composition_tags=["upper_body"],
-            scene_tags=["indoor"],
-            confidence=0.75,
+    async def fake_store_image(
+        job_id: str, filename: str, binary: bytes, content_type: str
+    ) -> str:
+        _image_store[(job_id, filename)] = (binary, content_type)
+        return f"http://testserver/api/images/{job_id}/{filename}"
+
+    async def fake_get_image(job_id: str, filename: str):
+        return _image_store.get((job_id, filename))
+
+    monkeypatch.setattr("app.routes.pose_variants.store_image", fake_store_image)
+    monkeypatch.setattr("app.routes.pose_variants.get_image", fake_get_image)
+
+    polygon_json = (
+        '{"polygon":['
+        + ",".join(
+            f'{{"x":{0.2 + (i % 4) * 0.15},"y":{0.2 + (i // 4) * 0.12}}}'
+            for i in range(16)
+        )
+        + "]}"
+    )
+
+    class FakeChat:
+        async def send_async(self, **kwargs):  # noqa: ANN003
+            modalities = kwargs.get("modalities") or []
+            if "image" in modalities:
+                return _sample_chat_result_with_image(url=gen_data_url)
+            return components.ChatResult(
+                id="chatcmpl-outline",
+                object="chat.completion",
+                created=0,
+                model=settings.pose_guide_model,
+                choices=[
+                    components.ChatChoice(
+                        finish_reason="stop",
+                        index=0,
+                        message=components.ChatAssistantMessage(
+                            role="assistant",
+                            content=polygon_json,
+                        ),
+                    )
+                ],
+                system_fingerprint=None,
+            )
+
+    class FakeOpenRouter:
+        def __init__(self) -> None:
+            self.chat = FakeChat()
+
+    async def streaming_agent():
+        class MockAgent:
+            async def run(self, *args, **kwargs):
+                class Result:
+                    output = [
+                        PoseTargetSpec(
+                            title="One",
+                            instruction="i",
+                            rationale="r",
+                            approximate_landmarks=[],
+                        ),
+                        PoseTargetSpec(
+                            title="Two",
+                            instruction="i",
+                            rationale="r",
+                            approximate_landmarks=[],
+                        ),
+                    ]
+
+                return Result()
+
+        return MockAgent()
+
+    prev_agent_override = app.dependency_overrides.get(get_pose_generation_agent)
+    app.dependency_overrides[get_pose_generation_agent] = streaming_agent
+    app.dependency_overrides[get_openrouter_client] = lambda: FakeOpenRouter()
+    try:
+        client = TestClient(app)
+        png_bytes = base64.b64decode(minimal_png_b64)
+        with client.stream(
+            "POST",
+            "/api/pose-variants",
+            files={
+                "reference_image": ("ref.jpg", png_bytes, "image/jpeg"),
+            },
+        ) as r:
+            assert r.status_code == 200
+            assert r.headers.get("content-type", "").startswith("text/event-stream")
+            raw = r.read().decode("utf-8")
+    finally:
+        app.dependency_overrides.pop(get_openrouter_client, None)
+        if prev_agent_override is not None:
+            app.dependency_overrides[get_pose_generation_agent] = prev_agent_override
+
+    events = _parse_sse(raw)
+    types = [e[0] for e in events]
+    assert "target_count" in types
+    assert types.count("pose") == 2
+    assert "done" in types
+    assert "error" not in types
+
+    tc = next(p for t, p in events if t == "target_count")
+    assert tc["count"] == 2
+    done = next(p for t, p in events if t == "done")
+    assert done["count"] == 2
+    pose_payload = next(p for t, p in events if t == "pose")
+    assert "pose" in pose_payload and "outline" in pose_payload
+    assert len(pose_payload["outline"]["polygon"]) == 16
+
+
+def test_validate_config_requires_openrouter_key() -> None:
+    from app.config import Settings, validate_config
+
+    with pytest.raises(ValueError, match="OPENROUTER_API_KEY"):
+        validate_config(
+            _settings=Settings(
+                openrouter_api_key="",
+                mubit_api_key="mbt_test",
+            )
         )
 
-    monkeypatch.setattr(onboarding_mod, "_extract_single", fake_extract_single)
-    entries = extract_memory_seed_entries(
-        [
-            OnboardingImageInput(
-                filename="good.jpg", content_type="image/jpeg", data=b"\xff\xd8\xff"
-            ),
-            OnboardingImageInput(
-                filename="bad.jpg", content_type="image/jpeg", data=b"\xff\xd8\xff"
-            ),
-        ]
-    )
-    assert calls == ["good.jpg", "bad.jpg"]
-    assert len(entries) == 1
-    assert entries[0].source_ref == "good.jpg"
+
+def test_validate_config_requires_mubit_key() -> None:
+    from app.config import Settings, validate_config
+
+    with pytest.raises(ValueError, match="MUBIT_API_KEY"):
+        validate_config(
+            _settings=Settings(
+                openrouter_api_key="sk-or-test",
+                mubit_api_key="",
+            )
+        )

@@ -14,7 +14,9 @@ uv sync
 ```bash
 cp .env.example .env
 # set PYDANTIC_AI_GATEWAY_API_KEY=pylf_v... (get one at logfire.pydantic.dev)
-# set OPENAI_API_KEY=sk-... for pose-variant image generation
+# set OPENROUTER_API_KEY=... (pose-variant images + pose-outline JSON via OpenRouter SDK)
+# set MUBIT_API_KEY=... (required — the API will not start without it)
+# set OPENAI_API_KEY=sk-... only if you use onboarding vision (`/api/memory/onboarding/images`)
 uv run uvicorn app.main:app --reload
 ```
 
@@ -23,8 +25,7 @@ Endpoints:
 - `GET  /health` — `{ "status": "ok", "model": "<agent_model>" }`
 - `GET  /api/templates` — list of `TemplateMeta`
 - `POST /api/guidance` — `PoseContext` → `GuidanceResponse`
-- `POST /api/pose-variants` — multipart `reference_image` → async job
-- `GET  /api/pose-variants/{job_id}` — poll generated pose gallery status
+- `POST /api/pose-variants` — multipart `reference_image` → **SSE** (`text/event-stream`): `target_count`, per-item `pose` (variant + outline polygon), optional `pose_error`, terminal `error` / `done`
 - `POST /api/memory/onboarding/images` — multipart `images` (1–5) + taste extraction → Mubit seed
 - `POST /api/memory/preferences` — persist per-source learning preferences
 - `POST /api/memory/reset` — soft/hard user memory reset request
@@ -32,28 +33,28 @@ Endpoints:
 
 ## Model
 
-The agent uses [Pydantic AI](https://ai.pydantic.dev/) with
-`output_type=GuidanceResponse`, so the model is forced to return a
-schema-valid object. The default model string is
-`gateway/openai:gpt-5.3` — requests are routed through the
-[Pydantic AI Gateway](https://pydantic.dev/docs/ai/overview/gateway/),
-authenticated with `PYDANTIC_AI_GATEWAY_API_KEY`. Override `AGENT_MODEL`
-in `.env` to swap to any other gateway-supported model.
+The pose-target agent uses [Pydantic AI](https://ai.pydantic.dev/) with
+structured output, calling OpenRouter’s OpenAI-compatible API (`OPENROUTER_API_KEY`).
+Default `AGENT_MODEL` is `openai/gpt-5.4-mini`. Override it in `.env` for any other
+OpenRouter-supported chat model.
 
-## Pose Variant Generation
+## Pose Variant Generation (SSE)
 
-Pose variants use OpenAI image editing with `gpt-image-1` by default. The
-frontend captures one live camera frame, uploads it as `reference_image`,
-then polls until the backend returns 10 generated gallery cards. Generated
-files are stored locally under `backend/generated/` and cleaned up by TTL.
+One request runs the full pipeline: **pose targets** (Pydantic AI) → **N parallel** OpenRouter
+image generations (`IMAGE_MODEL`) → for each stored image, a **vision** outline (`POSE_GUIDE_MODEL`,
+default `google/gemini-3.1-pro-preview`) with JSON Schema structured output (16–28 normalized
+`{x,y}` vertices). Each completed item is pushed on the stream as a `pose` event
+(`{ "pose": PoseVariantResult, "outline": PoseOutlineResponse }`).
 
 Useful environment overrides:
 
 ```bash
-IMAGE_MODEL=gpt-image-1
-IMAGE_SIZE=1024x1536
-IMAGE_QUALITY=medium
-IMAGE_INPUT_FIDELITY=high
+OPENROUTER_API_KEY=...
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+IMAGE_MODEL=black-forest-labs/flux.2-pro
+POSE_GUIDE_MODEL=google/gemini-3.1-pro-preview
+POSE_GUIDE_MAX_TOKENS=2048
+AGENT_MAX_TOKENS=8192
 GENERATED_TTL_SECONDS=21600
 MUBIT_API_KEY=mbt_...
 MUBIT_ENDPOINT=https://api.mubit.ai
@@ -63,13 +64,15 @@ ONBOARDING_VISION_MODEL=gpt-4.1-mini
 
 ### Mubit personalization
 
-When `MUBIT_API_KEY` is set:
+`MUBIT_API_KEY` is **required**: `validate_config()` runs on startup and the process exits if it is
+missing or blank. Memory routes assume Mubit is configured.
 
 - `/api/memory/onboarding/images` stores extracted taste tags from user-selected photos.
 - `/api/memory/preferences` and `/api/memory/reset` update the user’s memory policy.
 
-`OPENAI_API_KEY` is required for onboarding image analysis. If Mubit or OpenAI is unavailable,
-memory endpoints return `ok: false` while the rest of the API keeps working.
+Onboarding image analysis (`memory_onboarding.py`) calls the **OpenAI API** with `OPENAI_API_KEY`,
+not OpenRouter. If the OpenAI call fails for a given image, that extraction is skipped; Mubit
+writes still require a working Mubit service for successful onboarding seeds.
 
 ## Tests
 

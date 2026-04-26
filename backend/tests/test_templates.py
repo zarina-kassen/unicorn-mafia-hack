@@ -12,7 +12,7 @@ from openrouter import components
 
 from app.agents import get_pose_generation_agent
 from app.auth.clerk import require_auth
-from app.config import settings
+from app.config import Settings, settings
 from app.dependencies import get_openrouter_client
 from app.main import app
 from app.routes.pose_variants import _assistant_image_url
@@ -287,25 +287,47 @@ def test_pose_variants_sse_stream(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(pose_payload["outline"]["polygon"]) == 16
 
 
-def test_validate_config_requires_openrouter_key() -> None:
-    from app.config import Settings, validate_config
+_VALID_SETTINGS = Settings(
+    openrouter_api_key="sk-or-test",
+    mubit_api_key="mbt_test",
+    clerk_secret_key="sk_test_clerk",
+    database_url="postgresql://u:p@localhost:5432/test",
+)
 
+
+def test_validate_config_requires_openrouter_key() -> None:
+    from app.config import validate_config
+
+    cfg = _VALID_SETTINGS.model_copy(update={"openrouter_api_key": ""})
     with pytest.raises(ValueError, match="OPENROUTER_API_KEY"):
-        validate_config(
-            _settings=Settings(
-                openrouter_api_key="",
-                mubit_api_key="mbt_test",
-            )
-        )
+        validate_config(_settings=cfg)
 
 
 def test_validate_config_requires_mubit_key() -> None:
-    from app.config import Settings, validate_config
+    from app.config import validate_config
 
+    cfg = _VALID_SETTINGS.model_copy(update={"mubit_api_key": ""})
     with pytest.raises(ValueError, match="MUBIT_API_KEY"):
-        validate_config(
-            _settings=Settings(
-                openrouter_api_key="sk-or-test",
-                mubit_api_key="",
-            )
-        )
+        validate_config(_settings=cfg)
+
+
+def test_validate_config_requires_clerk_secret_key() -> None:
+    from app.config import validate_config
+
+    cfg = _VALID_SETTINGS.model_copy(update={"clerk_secret_key": ""})
+    with pytest.raises(ValueError, match="CLERK_SECRET_KEY"):
+        validate_config(_settings=cfg)
+
+
+def test_validate_config_requires_database_url() -> None:
+    from app.config import validate_config
+
+    cfg = _VALID_SETTINGS.model_copy(update={"database_url": ""})
+    with pytest.raises(ValueError, match="DATABASE_URL"):
+        validate_config(_settings=cfg)
+
+
+def test_validate_config_passes_all_required() -> None:
+    from app.config import validate_config
+
+    validate_config(_settings=_VALID_SETTINGS)

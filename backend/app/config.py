@@ -118,6 +118,12 @@ class Settings(BaseSettings):
         description="JPEG quality for downscaled pipeline images (lower = smaller/faster).",
     )
 
+    # Database Configuration
+    database_url: str = Field(
+        default="",
+        description="PostgreSQL connection string (e.g. postgresql://user:pass@host:5432/db)",
+    )
+
     # Storage Configuration
     generated_ttl_seconds: int = Field(
         default=6 * 60 * 60,
@@ -172,3 +178,7 @@ def validate_config(*, _settings: Settings | None = None) -> None:
         raise ValueError("OPENROUTER_API_KEY environment variable is required")
     if not (cfg.mubit_api_key or "").strip():
         raise ValueError("MUBIT_API_KEY environment variable is required")
+    if not (cfg.clerk_secret_key or "").strip():
+        raise ValueError("CLERK_SECRET_KEY environment variable is required")
+    if not (cfg.database_url or "").strip():
+        raise ValueError("DATABASE_URL environment variable is required")

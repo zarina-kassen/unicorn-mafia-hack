@@ -35,13 +35,6 @@ services:
       - key: AGENT_MAX_TOKENS
         value: "8192"
 
-  # ── PostgreSQL Database ──
-  - type: pserv
-    name: frame-mog-db
-    plan: starter
-    databaseName: frame_mog
-    maxconnections: 20
-
   # ── Frontend: Vite + React static site ──
   - type: web
     name: frame-mog-web
@@ -62,3 +55,9 @@ services:
       - path: /*
         name: X-Frame-Options
         value: DENY
+
+databases:
+  # ── PostgreSQL Database ──
+  - name: frame-mog-db
+    plan: starter
+    databaseName: frame_mog

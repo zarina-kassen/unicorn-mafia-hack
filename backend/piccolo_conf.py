@@ -1,19 +1,13 @@
 """Piccolo configuration for database connection."""
 
+from __future__ import annotations
+
 import os
 
 from piccolo.conf.apps import AppConfig
 from piccolo.engine.postgres import PostgresEngine
 
-DB = PostgresEngine(
-    config={
-        "database": os.environ.get("POSTGRES_DATABASE", "postgres"),
-        "user": os.environ.get("POSTGRES_USER", "postgres"),
-        "password": os.environ.get("POSTGRES_PASSWORD", ""),
-        "host": os.environ.get("POSTGRES_HOST", "localhost"),
-        "port": os.environ.get("POSTGRES_PORT", "5432"),
-    }
-)
+DB = PostgresEngine(config={"dsn": os.environ.get("DATABASE_URL", "")})
 
 APP_CONFIG = AppConfig(
     app_name="frame_mog",

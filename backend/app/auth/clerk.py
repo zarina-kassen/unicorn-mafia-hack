@@ -25,12 +25,6 @@ async def require_auth(request: Request) -> str:
     Raises:
         HTTPException: If authentication fails (401) or configuration is invalid (500).
     """
-    if not settings.clerk_secret_key:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="CLERK_SECRET_KEY is not configured",
-        )
-
     try:
         request_state = await authenticate_request_async(
             request,

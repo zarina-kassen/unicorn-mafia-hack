@@ -83,7 +83,7 @@ cd frontend && bun run dev
 | `CLERK_AUTHORIZED_PARTIES`   | backend  | Comma-separated allowed origins  |
 | `VITE_CLERK_PUBLISHABLE_KEY` | frontend | Clerk frontend key               |
 | `VITE_BACKEND_URL`           | frontend | Backend base URL (empty for proxy)|
-| `AGENT_MODEL`                | backend  | OpenRouter text planner slug (default `meta-llama/llama-3.3-70b-instruct`; portraits use `FAST_IMAGE_MODEL` / FLUX) |
+| `AGENT_MODEL`                | backend  | OpenRouter slug for Pydantic AI pose-target planner (default `meta-llama/llama-3.3-70b-instruct`) |
 | `POSE_GUIDE_MODEL`           | backend  | OpenRouter vision+JSON outline slug (default `openai/gpt-4o-mini`; not FLUX) |
 | `FAST_IMAGE_MODEL`           | backend  | OpenRouter FLUX slug for pose-variant images (default `black-forest-labs/flux.2-klein-4b`; `IMAGE_MODEL` alias) |
 

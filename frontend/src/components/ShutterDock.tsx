@@ -32,7 +32,8 @@ export function ShutterDock({
       className={cn(
         'flex items-center justify-center gap-4',
         isOverlay &&
-          'pointer-events-none absolute inset-x-0 bottom-[calc(100px+env(safe-area-inset-bottom,0px))] z-[15] [&>*]:pointer-events-auto md:static md:inset-auto md:bottom-auto md:z-auto md:mt-4 md:pb-0',
+          /* Above fixed “Poses” pill (h-12 + bottom inset + gap); keep in sync with CameraScreen */
+          'pointer-events-none absolute inset-x-0 bottom-[calc(72px+env(safe-area-inset-bottom,0px))] z-[15] [&>*]:pointer-events-auto md:static md:inset-auto md:bottom-auto md:z-auto md:mt-4 md:pb-0',
         !isOverlay && 'mt-4',
         className,
       )}

@@ -7,11 +7,17 @@ import {
   type Ref,
 } from 'react'
 import type { PoseOutlineResponse } from '../api/poseVariants'
+import {
+  type PreparedMask,
+  buildPreparedMaskFromImageSource,
+} from '../pose/preparedMaskFromImage'
 
 interface PoseOverlayProps {
   videoRef: React.RefObject<HTMLVideoElement | null>
-  /** Vision-LLM silhouette polygon in normalized image coordinates. */
+  /** Vision-LLM silhouette polygon (fallback until mask guide is ready). */
   outline?: PoseOutlineResponse | null
+  /** Absolute URL of LLM mask image (white person on dark background). */
+  photoMaskUrl?: string | null
   paused?: boolean
 }
 
@@ -22,7 +28,6 @@ interface NormPoint {
 
 interface PreparedOutline {
   outlineNorm: NormPoint[]
-  /** Normalized bbox of the polygon (same space as original x,y). */
   bbox: { x: number; y: number; width: number; height: number }
 }
 
@@ -78,14 +83,15 @@ function prepareOutline(outline: PoseOutlineResponse): PreparedOutline | null {
   }
 }
 
-function drawOutlineSilhouette(
+function drawSilhouette(
   ctx: CanvasRenderingContext2D,
-  prepared: PreparedOutline,
+  outlineNorm: NormPoint[],
+  bbox: { width: number; height: number },
   width: number,
   height: number,
   dpr: number,
 ): void {
-  const { bbox } = prepared
+  if (outlineNorm.length < 3) return
 
   const targetHeight = height * 0.82
   const scale = Math.max(0.1, targetHeight / bbox.height)
@@ -97,18 +103,14 @@ function drawOutlineSilhouette(
   const glow = Math.max(8, 14 * dpr)
   const lineWidth = Math.max(2.0, Math.min(4.2, width / dpr * 0.0045)) * dpr
 
-  ctx.save()
-  ctx.imageSmoothingEnabled = true
-  ctx.imageSmoothingQuality = 'high'
-  const outline = prepared.outlineNorm
-  if (outline.length < 3) {
-    ctx.restore()
-    return
-  }
-  const projected: Point[] = outline.map((p) => ({
+  const projected: Point[] = outlineNorm.map((p) => ({
     x: dx + p.x * drawW,
     y: dy + p.y * drawH,
   }))
+
+  ctx.save()
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
 
   ctx.beginPath()
   traceSmoothClosedContour(ctx, projected)
@@ -141,8 +143,14 @@ function assignCanvasRef(
   else (outer as MutableRefObject<HTMLCanvasElement | null>).current = node
 }
 
+function preparedMaskToDraw(mask: PreparedMask): PreparedOutline | null {
+  const { bbox, outlineNorm } = mask
+  if (!bbox || !outlineNorm || outlineNorm.length < 3) return null
+  return { outlineNorm, bbox }
+}
+
 export const PoseOverlay = forwardRef<HTMLCanvasElement, PoseOverlayProps>(function PoseOverlay(
-  { videoRef, outline = null, paused = false },
+  { videoRef, outline = null, photoMaskUrl = null, paused = false },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -150,11 +158,39 @@ export const PoseOverlay = forwardRef<HTMLCanvasElement, PoseOverlayProps>(funct
     (node: HTMLCanvasElement | null) => assignCanvasRef(node, canvasRef, ref),
     [ref],
   )
-  const preparedRef = useRef<PreparedOutline | null>(null)
+  const outlinePreparedRef = useRef<PreparedOutline | null>(null)
+  const maskPreparedRef = useRef<PreparedOutline | null>(null)
 
   useEffect(() => {
-    preparedRef.current = outline ? prepareOutline(outline) : null
+    outlinePreparedRef.current = outline ? prepareOutline(outline) : null
   }, [outline])
+
+  useEffect(() => {
+    maskPreparedRef.current = null
+    if (!photoMaskUrl) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const img = new Image()
+          img.crossOrigin = 'anonymous'
+          img.onload = () => resolve(img)
+          img.onerror = () => reject(new Error('Mask image failed to load'))
+          img.src = photoMaskUrl
+        })
+        if (cancelled) return
+        const w = image.naturalWidth || image.width || 1
+        const h = image.naturalHeight || image.height || 1
+        const prepared = buildPreparedMaskFromImageSource(image, w, h)
+        maskPreparedRef.current = preparedMaskToDraw(prepared)
+      } catch {
+        if (!cancelled) maskPreparedRef.current = null
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [photoMaskUrl])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -183,9 +219,18 @@ export const PoseOverlay = forwardRef<HTMLCanvasElement, PoseOverlayProps>(funct
         const dpr = window.devicePixelRatio || 1
         ctx.clearRect(0, 0, canvas.width, canvas.height)
         if (!paused) {
-          const prepared = preparedRef.current
+          const fromMask = maskPreparedRef.current
+          const fromOutline = outlinePreparedRef.current
+          const prepared = fromMask ?? fromOutline
           if (prepared) {
-            drawOutlineSilhouette(ctx, prepared, canvas.width, canvas.height, dpr)
+            drawSilhouette(
+              ctx,
+              prepared.outlineNorm,
+              prepared.bbox,
+              canvas.width,
+              canvas.height,
+              dpr,
+            )
           }
         }
       }
@@ -200,5 +245,5 @@ export const PoseOverlay = forwardRef<HTMLCanvasElement, PoseOverlayProps>(funct
     }
   }, [videoRef, paused])
 
-  return <canvas ref={setCanvasRef} className="absolute inset-0 pointer-events-none" />
+  return <canvas ref={setCanvasRef} className="pointer-events-none absolute inset-0" />
 })

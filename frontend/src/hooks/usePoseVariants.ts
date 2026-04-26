@@ -1,6 +1,7 @@
 import { useAuth } from '@clerk/react'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
+import { extractPoseMask } from '../api/poseMask'
 import {
   PoseVariantsClient,
   type PoseOutlineResponse,
@@ -30,13 +31,25 @@ function toGalleryPose(r: PoseVariantResult): GalleryPose {
   }
 }
 
+/** Smaller reference = faster upload + upstream image APIs; quality tradeoff is OK for pose gen. */
+const REFERENCE_CAPTURE_MAX_EDGE = 720
+const REFERENCE_JPEG_QUALITY = 0.78
+
 function captureFrame(video: HTMLVideoElement): Promise<Blob> {
   if (!video.videoWidth || !video.videoHeight) {
     return Promise.reject(new Error('Camera frame is not ready yet.'))
   }
+  let w = video.videoWidth
+  let h = video.videoHeight
+  const longest = Math.max(w, h)
+  if (longest > REFERENCE_CAPTURE_MAX_EDGE) {
+    const s = REFERENCE_CAPTURE_MAX_EDGE / longest
+    w = Math.max(1, Math.round(w * s))
+    h = Math.max(1, Math.round(h * s))
+  }
   const canvas = document.createElement('canvas')
-  canvas.width = video.videoWidth
-  canvas.height = video.videoHeight
+  canvas.width = w
+  canvas.height = h
   const ctx = canvas.getContext('2d')
   if (!ctx) return Promise.reject(new Error('Could not capture camera frame.'))
   ctx.translate(canvas.width, 0)
@@ -46,7 +59,7 @@ function captureFrame(video: HTMLVideoElement): Promise<Blob> {
     canvas.toBlob(
       (blob) => (blob ? resolve(blob) : reject(new Error('Could not encode camera frame.'))),
       'image/jpeg',
-      0.92,
+      REFERENCE_JPEG_QUALITY,
     )
   })
 }
@@ -58,6 +71,9 @@ export function usePoseVariants() {
 
   const [variants, setVariants] = useState<PoseVariantResult[]>([])
   const [outlines, setOutlines] = useState<Record<string, PoseOutlineResponse>>({})
+  /** Branch-5-style mask guide URLs keyed by pose id (preferred over vision JSON outline). */
+  const [maskUrls, setMaskUrls] = useState<Record<string, string>>({})
+  const maskFetchStartedRef = useRef<Set<string>>(new Set())
   const [expectedCount, setExpectedCount] = useState(0)
   /** Server SSE phase: planning (LLM targets) vs generating (parallel images). */
   const [streamPhase, setStreamPhase] = useState<string | null>(null)
@@ -85,6 +101,8 @@ export function usePoseVariants() {
       setError(null)
       setVariants([])
       setOutlines({})
+      setMaskUrls({})
+      maskFetchStartedRef.current = new Set()
       setExpectedCount(0)
       setStreamPhase(null)
 
@@ -138,9 +156,25 @@ export function usePoseVariants() {
     [client],
   )
 
+  useEffect(() => {
+    const tokenFn = getToken
+    for (const v of variants) {
+      if (maskFetchStartedRef.current.has(v.id)) continue
+      maskFetchStartedRef.current.add(v.id)
+      void extractPoseMask(v.image_url, tokenFn)
+        .then((res) => {
+          setMaskUrls((prev) => ({ ...prev, [v.id]: res.mask_url }))
+        })
+        .catch(() => {
+          /* Outline fallback remains in `outlines` */
+        })
+    }
+  }, [variants, getToken])
+
   return {
     data: poses,
     outlines,
+    maskUrls,
     expectedCount,
     streamPhase,
     mutate,

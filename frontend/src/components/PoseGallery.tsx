@@ -59,6 +59,7 @@ export function PoseGalleryPanel({
             {poses.map((pose) => (
               <PoseCard
                 key={pose.id}
+                layout="stack"
                 pose={pose}
                 active={pose.id === activeId}
                 onSelect={() => onSelect(pose.id)}
@@ -66,16 +67,17 @@ export function PoseGalleryPanel({
             ))}
             {galleryBusy &&
               Array.from({ length: skeletonSlots }).map((_, i) => (
-                <PoseCardSkeleton key={`sk-${i}`} className="w-full" />
+                <PoseCardSkeleton key={`sk-${i}`} layout="stack" />
               ))}
           </div>
         </ScrollArea>
       ) : (
         <div className="max-h-[min(48dvh,420px)] min-h-0 flex-1 overflow-x-auto overflow-y-hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <div className="flex w-max flex-row gap-3 px-4 pb-4">
+          <div className="flex w-max min-h-[200px] flex-row items-stretch gap-3 px-4 pb-4">
             {poses.map((pose) => (
               <PoseCard
                 key={pose.id}
+                layout="strip"
                 pose={pose}
                 active={pose.id === activeId}
                 onSelect={() => onSelect(pose.id)}
@@ -83,7 +85,7 @@ export function PoseGalleryPanel({
             ))}
             {galleryBusy &&
               Array.from({ length: skeletonSlots }).map((_, i) => (
-                <PoseCardSkeleton key={`sk-${i}`} />
+                <PoseCardSkeleton key={`sk-${i}`} layout="strip" />
               ))}
           </div>
         </div>

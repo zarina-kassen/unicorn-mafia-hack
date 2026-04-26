@@ -64,6 +64,14 @@ class Settings(BaseSettings):
         ),
         validation_alias=AliasChoices("FAST_IMAGE_MODEL", "IMAGE_MODEL"),
     )
+    mask_model: str = Field(
+        default="black-forest-labs/flux.2-klein-4b",
+        description=(
+            "Image model for person-segmentation masks (OpenRouter). "
+            "Defaults to FAST_IMAGE_MODEL; override with MASK_MODEL."
+        ),
+        validation_alias=AliasChoices("MASK_MODEL"),
+    )
     pose_guide_model: str = Field(
         default="openai/gpt-4o-mini",
         description=(
@@ -72,14 +80,42 @@ class Settings(BaseSettings):
         ),
     )
     agent_max_tokens: int = Field(
-        default=8192,
+        default=4096,
         ge=256,
-        description="Max completion tokens for the pose-target planning agent (OpenRouter bills against this cap).",
+        description="Max completion tokens for the Pydantic AI pose-target planner.",
     )
     pose_guide_max_tokens: int = Field(
-        default=2048,
+        default=768,
         ge=256,
-        description="Max completion tokens for vision outline JSON (small structured output).",
+        description="Max completion tokens for silhouette JSON (small structured output).",
+    )
+    pose_variant_image_size: str = Field(
+        default="1K",
+        description="OpenRouter image_config.image_size for generated portraits (model-dependent).",
+    )
+    pose_reference_max_edge_px: int = Field(
+        default=720,
+        ge=320,
+        le=2048,
+        description="Max longest edge (px) for reference frame sent to image + vision APIs.",
+    )
+    pose_outline_vision_max_edge_px: int = Field(
+        default=512,
+        ge=256,
+        le=1024,
+        description="Max longest edge for images sent to POSE_GUIDE_MODEL.",
+    )
+    pose_stored_image_max_edge_px: int = Field(
+        default=768,
+        ge=320,
+        le=2048,
+        description="Cap stored generated image size before DB (smaller = faster UI).",
+    )
+    pose_jpeg_quality: int = Field(
+        default=78,
+        ge=50,
+        le=95,
+        description="JPEG quality for downscaled pipeline images (lower = smaller/faster).",
     )
 
     # Storage Configuration

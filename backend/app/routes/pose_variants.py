@@ -7,6 +7,7 @@ import base64
 import binascii
 import json
 import logging
+import random
 import struct
 from collections.abc import AsyncIterator
 from urllib.parse import unquote, urlsplit
@@ -24,6 +25,8 @@ from ..agents import PoseAgentDeps as AgentDeps, get_pose_generation_agent
 from ..auth.clerk import require_auth
 from ..config import settings
 from ..dependencies import get_openrouter_client
+from ..image_resize import downscale_to_jpeg
+from ..pose_variant_templates import TEMPLATE_POSE_POOL
 from ..schemas import (
     PoseOutlinePoint,
     PoseOutlineResponse,
@@ -38,6 +41,32 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/pose-variants", tags=["pose-variants"])
 
 POSE_VARIANT_TOTAL = 6
+POSE_VARIANT_TEMPLATE_SLOTS = 2
+POSE_VARIANT_AGENT_SLOTS = 4
+
+def _agent_specs_with_fallbacks(
+    agent_specs: list[PoseTargetSpec],
+    k: int,
+    *,
+    exclude_titles: frozenset[str],
+) -> list[PoseTargetSpec]:
+    """Ensure exactly k specs for agent slots; pad from template pool if the model returns too few."""
+    out = list(agent_specs)[:k]
+    if len(out) >= k:
+        return out
+    used = {s.title for s in out} | set(exclude_titles)
+    for tmpl in TEMPLATE_POSE_POOL:
+        if tmpl.title in used:
+            continue
+        out.append(tmpl.model_copy(deep=True))
+        used.add(tmpl.title)
+        if len(out) >= k:
+            return out
+    while len(out) < k:
+        fallback = out[-1] if out else TEMPLATE_POSE_POOL[0]
+        out.append(fallback.model_copy(deep=True))
+    return out[:k]
+
 
 POSE_OUTLINE_JSON_SCHEMA: dict = {
     "type": "object",
@@ -71,6 +100,26 @@ class _LLMPolygonPayload(BaseModel):
 def _sse_frame(event: str, payload: dict) -> str:
     """One Server-Sent Events message (UTF-8 text)."""
     return f"event: {event}\ndata: {json.dumps(payload, default=str)}\n\n"
+
+
+def _downscale_data_url_for_vision(data_url: str) -> str:
+    """Smaller image for outline LLM (faster upload + inference)."""
+    if not data_url.startswith("data:image/") or ";base64" not in data_url:
+        return data_url
+    header, separator, encoded = data_url.partition(",")
+    if separator != ",":
+        return data_url
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+    except binascii.Error:
+        return data_url
+    out_bytes, _ = downscale_to_jpeg(
+        raw,
+        max_edge_px=settings.pose_outline_vision_max_edge_px,
+        jpeg_quality=settings.pose_jpeg_quality,
+        fallback_content_type="image/jpeg",
+    )
+    return f"data:image/jpeg;base64,{base64.b64encode(out_bytes).decode('ascii')}"
 
 
 def _outline_prompt_text() -> str:
@@ -185,8 +234,14 @@ async def _store_generated_image(
         return None
 
     content_type = header.removeprefix("data:").split(";", maxsplit=1)[0]
-    filename = f"{uuid4().hex[:8]}.png"
-    return await store_image(job_id, filename, image_bytes, content_type)
+    image_bytes, _ = downscale_to_jpeg(
+        image_bytes,
+        max_edge_px=settings.pose_stored_image_max_edge_px,
+        jpeg_quality=settings.pose_jpeg_quality,
+        fallback_content_type=content_type,
+    )
+    filename = f"{uuid4().hex[:8]}.jpg"
+    return await store_image(job_id, filename, image_bytes, "image/jpeg")
 
 
 async def _generate_and_store_image(
@@ -212,7 +267,10 @@ async def _generate_and_store_image(
                 )
             ],
             modalities=["image"],
-            image_config={"aspect_ratio": "1:1", "image_size": "1K"},
+            image_config={
+                "aspect_ratio": "1:1",
+                "image_size": settings.pose_variant_image_size,
+            },
             stream=False,
         )
         try:
@@ -337,10 +395,13 @@ async def _extract_pose_outline_from_data_url(
     height: int,
     client: OpenRouter,
 ) -> PoseOutlineResponse:
+    vision_url = _downscale_data_url_for_vision(data_url)
     response = await client.chat.send_async(
         model=settings.pose_guide_model,
         messages=[
-            _user_vision_message(text=_outline_prompt_text(), image_data_url=data_url)
+            _user_vision_message(
+                text=_outline_prompt_text(), image_data_url=vision_url
+            )
         ],
         response_format=components.ChatFormatJSONSchemaConfig(
             type="json_schema",
@@ -427,6 +488,13 @@ async def create_pose_variants(
         raise HTTPException(status_code=400, detail="Only image files are allowed")
 
     image_bytes = await reference_image.read()
+    image_bytes, mime = downscale_to_jpeg(
+        image_bytes,
+        max_edge_px=settings.pose_reference_max_edge_px,
+        jpeg_quality=settings.pose_jpeg_quality,
+        fallback_content_type=mime or "image/jpeg",
+    )
+    mime = "image/jpeg"
     reference_image_data_url = (
         f"data:{mime};base64,{base64.b64encode(image_bytes).decode('ascii')}"
     )
@@ -436,37 +504,65 @@ async def create_pose_variants(
         # (SSE comment — no `data:` line; parsers that only care about events ignore it.)
         yield ": sse-open\n\n"
         yield _sse_frame("phase", {"step": "planning"})
-        deps = AgentDeps()
-        target_specs_result = await agent.run(
-            f"Generate {POSE_VARIANT_TOTAL} pose targets for the reference image. "
-            f"Reference image: {reference_image_data_url[:100]}...",
-            deps=deps,
-        )
-        target_specs = target_specs_result.output
-        n = len(target_specs)
         job_id = uuid4().hex[:8]
-        yield _sse_frame("target_count", {"count": n})
-        yield _sse_frame("phase", {"step": "generating", "count": n})
-        tasks = [
+        yield _sse_frame("target_count", {"count": POSE_VARIANT_TOTAL})
+        yield _sse_frame(
+            "phase", {"step": "generating", "count": POSE_VARIANT_TOTAL}
+        )
+
+        template_specs = random.sample(
+            list(TEMPLATE_POSE_POOL),
+            k=POSE_VARIANT_TEMPLATE_SLOTS,
+        )
+        exclude_titles = frozenset(t.title for t in template_specs)
+        early_tasks = [
             asyncio.create_task(
                 _generate_variant_with_outline(
-                    target,
-                    slot_index,
+                    template_specs[i],
+                    i,
                     client,
                     job_id,
                     reference_image_data_url,
                 )
             )
-            for slot_index, target in enumerate(target_specs)
+            for i in range(POSE_VARIANT_TEMPLATE_SLOTS)
         ]
+
+        deps = AgentDeps()
+        target_specs_result = await agent.run(
+            f"Generate exactly {POSE_VARIANT_AGENT_SLOTS} diverse, flattering pose targets "
+            f"for portrait photography from the reference image. "
+            f"Vary body angle, arms, and head position; make them distinct from "
+            f"generic studio clichés. Reference image: {reference_image_data_url[:100]}...",
+            deps=deps,
+        )
+        raw_agent = target_specs_result.output
+        agent_specs = _agent_specs_with_fallbacks(
+            raw_agent,
+            POSE_VARIANT_AGENT_SLOTS,
+            exclude_titles=exclude_titles,
+        )
+        late_tasks = [
+            asyncio.create_task(
+                _generate_variant_with_outline(
+                    agent_specs[j],
+                    POSE_VARIANT_TEMPLATE_SLOTS + j,
+                    client,
+                    job_id,
+                    reference_image_data_url,
+                )
+            )
+            for j in range(POSE_VARIANT_AGENT_SLOTS)
+        ]
+        tasks = early_tasks + late_tasks
         success_count = 0
         for finished in asyncio.as_completed(tasks):
             event_name, payload = await finished
             yield _sse_frame(event_name, payload)
             if event_name == "pose":
                 success_count += 1
-            # Small gap helps intermediaries flush chunked SSE (dev proxy, some tunnels).
-            await asyncio.sleep(0.012)
+            # Tiny yield so intermediaries can flush SSE without adding much latency.
+            await asyncio.sleep(0.004)
         if success_count == 0:
             yield _sse_frame("error", {"message": "Image generation failed"})
         yield _sse_frame("done", {"count": success_count})

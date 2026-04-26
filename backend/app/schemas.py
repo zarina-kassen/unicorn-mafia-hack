@@ -71,6 +71,21 @@ class PoseOutlineResponse(BaseModel):
     model: str = Field(min_length=1)
 
 
+class PoseMaskRequest(BaseModel):
+    """Request a stored pose image to be converted into a person mask."""
+
+    image_url: str = Field(min_length=1)
+
+
+class PoseMaskResponse(BaseModel):
+    """URL of a stored mask image (white person, black background) plus dimensions."""
+
+    mask_url: str = Field(min_length=1)
+    width: int = Field(ge=1)
+    height: int = Field(ge=1)
+    source: str = Field(min_length=1)
+
+
 class PoseStreamItem(BaseModel):
     """One streamed pose variant with its silhouette outline."""
 

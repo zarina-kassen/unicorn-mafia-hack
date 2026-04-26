@@ -1,4 +1,4 @@
-# frame-mog — frontend (React + Vite + MediaPipe)
+# frame-mog — frontend (React + Vite + client-side pose)
 
 See the repo root [`README.md`](../README.md) for product context and
 architecture.

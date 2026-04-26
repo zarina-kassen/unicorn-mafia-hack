@@ -5,7 +5,6 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Images } from 'lucide-react'
 import { toast } from 'sonner'
 
 import {
@@ -22,7 +21,6 @@ import { CameraTopBar } from '@/components/CameraTopBar'
 import { PoseGallery } from '@/components/PoseGallery'
 import { PoseOverlay } from '@/components/PoseOverlay'
 import { ShutterDock } from '@/components/ShutterDock'
-import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 interface SessionCapture {
@@ -231,8 +229,6 @@ export function CameraScreen() {
     selectedTitle: selectedPose?.title ?? 'Choose a pose',
   }
 
-  const shutterVariant = 'overlay' as const
-
   return (
     <div
       className={cn(
@@ -277,11 +273,11 @@ export function CameraScreen() {
               />
 
               <ShutterDock
-                variant={shutterVariant}
                 canTakePicture={canTakePicture}
                 onShutter={onShutterClick}
                 lastCapturePreviewUrl={lastSessionCapture?.previewUrl ?? null}
                 onSaveLastAgain={onSaveLastCaptureAgain}
+                onOpenGallery={() => setMobileGalleryOpen(true)}
               />
             </>
           )}
@@ -304,24 +300,13 @@ export function CameraScreen() {
       ) : null}
 
       {!isMdUp && galleryVisible ? (
-        <>
-          <PoseGallery
-            variant="mobile-sheet"
-            open={mobileGalleryOpen}
-            onOpenChange={setMobileGalleryOpen}
-            {...galleryPanelProps}
-            layout="horizontal"
-          />
-          <Button
-            type="button"
-            size="lg"
-            className="fixed bottom-[calc(12px+env(safe-area-inset-bottom,0px))] left-1/2 z-40 h-12 -translate-x-1/2 rounded-full border-cam-hairline bg-cam-panel/95 px-6 font-black text-cam-ink shadow-cam-panel backdrop-blur-md"
-            onClick={() => setMobileGalleryOpen(true)}
-          >
-            <Images className="mr-2 size-5" />
-            Poses
-          </Button>
-        </>
+        <PoseGallery
+          variant="mobile-sheet"
+          open={mobileGalleryOpen}
+          onOpenChange={setMobileGalleryOpen}
+          {...galleryPanelProps}
+          layout="horizontal"
+        />
       ) : null}
     </div>
   )

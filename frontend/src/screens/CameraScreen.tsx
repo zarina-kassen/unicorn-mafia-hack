@@ -14,6 +14,7 @@ import {
 } from '@/hooks/saveAlignedComposite'
 import { useCamera } from '@/hooks/useCamera'
 import { usePoseVariants } from '@/hooks/usePoseVariants'
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll'
 import { CameraFrame } from '@/components/CameraFrame'
 import { CameraLaunch } from '@/components/CameraLaunch'
 import { CameraTopBar } from '@/components/CameraTopBar'
@@ -36,6 +37,7 @@ export function CameraScreen() {
   const poses = useMemo(() => poseVariants.data ?? [], [poseVariants.data])
   const outlines = poseVariants.outlines
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [galleryOpen, setGalleryOpen] = useState(false)
   const activeId = selectedId ?? poses[0]?.id ?? null
   const selectedPose = useMemo(
     () => poses.find((p) => p.id === activeId) ?? null,
@@ -43,19 +45,36 @@ export function CameraScreen() {
   )
 
   const galleryBusy = poseVariants.isPending
+  const isLoadingMore = poseVariants.isLoadingMore
+  const hasMore = poseVariants.hasMore
   const targetTotal =
     poseVariants.expectedCount > 0
       ? poseVariants.expectedCount
       : galleryBusy
-        ? 6
+        ? 3
         : 0
   const skeletonSlots =
-    galleryBusy && targetTotal > poses.length ? targetTotal - poses.length : 0
-  const galleryVisible =
-    cameraState.status === 'ready' &&
-    (galleryBusy || poses.length > 0 || poseVariants.isError)
+    galleryBusy && targetTotal > poses.length
+      ? Math.max(targetTotal - poses.length, 3)
+      : galleryBusy && poses.length === 0
+        ? 3
+        : isLoadingMore
+          ? 3
+          : 0
 
-  const [galleryOpen, setGalleryOpen] = useState(false)
+  // Infinite scroll: load more when user scrolls near bottom
+  const loadMoreSentinel = useInfiniteScroll(
+    () => {
+      if (hasMore && !galleryBusy && !isLoadingMore && poses.length >= 3) {
+        poseVariants.loadMore()
+      }
+    },
+    {
+      enabled: galleryOpen && hasMore && !galleryBusy && !isLoadingMore,
+    }
+  )
+
+  const galleryVisible = cameraState.status === 'ready' && galleryOpen
   const [shutterFlashActive, setShutterFlashActive] = useState(false)
   const [generateFlashActive, setGenerateFlashActive] = useState(false)
   const [sessionCaptures, setSessionCaptures] = useState<SessionCapture[]>([])
@@ -201,11 +220,7 @@ export function CameraScreen() {
       .catch(() => toast.error('Could not save'))
   }, [lastSessionCapture])
 
-  const generationCopy = poseVariants.isPending
-    ? 'Generating…'
-    : poseVariants.isSuccess
-      ? 'Regenerate'
-      : 'Generate'
+
 
   const galleryPanelProps = {
     poses,
@@ -221,6 +236,9 @@ export function CameraScreen() {
           ? 'Generation failed.'
           : null,
     selectedTitle: selectedPose?.title ?? 'Choose a pose',
+    isLoadingMore,
+    hasMore,
+    onGenerate: handleGenerate,
   }
 
   return (
@@ -248,9 +266,7 @@ export function CameraScreen() {
         <>
           <CameraTopBar
             className="absolute left-3 right-3 top-[max(12px,env(safe-area-inset-top,0px))] z-20 md:left-4 md:right-4 md:top-4"
-            generationLabel={generationCopy}
             galleryBusy={galleryBusy}
-            onGenerate={handleGenerate}
             onPrevPose={onPrevPose}
             onNextPose={onNextPose}
             onClearSelection={onClearSelection}
@@ -278,6 +294,7 @@ export function CameraScreen() {
         <PoseGallery
           open={galleryOpen}
           onOpenChange={setGalleryOpen}
+          loadMoreSentinel={loadMoreSentinel}
           {...galleryPanelProps}
         />
       ) : null}

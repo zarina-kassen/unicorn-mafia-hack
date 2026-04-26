@@ -68,6 +68,7 @@ export function usePoseVariants() {
   const { getToken } = useAuth()
   const client = useMemo(() => new PoseVariantsClient(getToken), [getToken])
   const abortRef = useRef<AbortController | null>(null)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
 
   const [variants, setVariants] = useState<PoseVariantResult[]>([])
   const [outlines, setOutlines] = useState<Record<string, PoseOutlineResponse>>({})
@@ -78,9 +79,11 @@ export function usePoseVariants() {
   /** Server SSE phase: planning (LLM targets) vs generating (parallel images). */
   const [streamPhase, setStreamPhase] = useState<string | null>(null)
   const [isPending, setIsPending] = useState(false)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
   const [isError, setIsError] = useState(false)
   const [error, setError] = useState<Error | null>(null)
+  const [hasMore, setHasMore] = useState(true)
 
   const poses = useMemo(
     () =>
@@ -95,7 +98,9 @@ export function usePoseVariants() {
       abortRef.current?.abort()
       const ac = new AbortController()
       abortRef.current = ac
+      videoRef.current = videoEl
       setIsPending(true)
+      setIsLoadingMore(false)
       setIsSuccess(false)
       setIsError(false)
       setError(null)
@@ -105,6 +110,7 @@ export function usePoseVariants() {
       maskFetchStartedRef.current = new Set()
       setExpectedCount(0)
       setStreamPhase(null)
+      setHasMore(true)
 
       try {
         const frame = await captureFrame(videoEl)
@@ -132,14 +138,17 @@ export function usePoseVariants() {
             },
             onError: (p) => {
               setIsPending(false)
+              setIsLoadingMore(false)
               setStreamPhase(null)
               setIsError(true)
               setError(new Error(p.message))
             },
             onDone: ({ count }) => {
               setIsPending(false)
+              setIsLoadingMore(false)
               setStreamPhase(null)
               setIsSuccess(count > 0)
+              setHasMore(count >= 3) // Assume more can be generated if we got at least 3
               if (count === 0) setIsError(true)
             },
           },
@@ -148,6 +157,7 @@ export function usePoseVariants() {
       } catch (e) {
         if ((e as Error).name === 'AbortError') return
         setIsPending(false)
+        setIsLoadingMore(false)
         setStreamPhase(null)
         setIsError(true)
         setError(e instanceof Error ? e : new Error(String(e)))
@@ -155,6 +165,63 @@ export function usePoseVariants() {
     },
     [client],
   )
+
+  const loadMore = useCallback(async () => {
+    if (!videoRef.current || isLoadingMore || !hasMore || isPending) return
+
+    abortRef.current?.abort()
+    const ac = new AbortController()
+    abortRef.current = ac
+    setIsLoadingMore(true)
+    setStreamPhase(null)
+
+    try {
+      const frame = await captureFrame(videoRef.current)
+      await client.stream(
+        frame,
+        {
+          onPhase: (p) => {
+            flushSync(() => setStreamPhase(p.step))
+          },
+          onTargetCount: (count) => {
+            flushSync(() => setExpectedCount((prev) => prev + count))
+          },
+          onPose: ({ pose, outline }) => {
+            flushSync(() => {
+              setVariants((prev) =>
+                [...prev.filter((p) => p.id !== pose.id), pose].sort(
+                  (a, b) => a.slot_index - b.slot_index,
+                ),
+              )
+              setOutlines((prev) => ({ ...prev, [pose.id]: outline }))
+            })
+          },
+          onPoseError: () => {
+            /* per-slot failure: optional UI could aggregate */
+          },
+          onError: (p) => {
+            setIsLoadingMore(false)
+            setStreamPhase(null)
+            setIsError(true)
+            setError(new Error(p.message))
+          },
+          onDone: ({ count }) => {
+            setIsLoadingMore(false)
+            setStreamPhase(null)
+            setHasMore(count >= 3) // Assume more can be generated if we got at least 3
+            if (count === 0) setHasMore(false)
+          },
+        },
+        ac.signal,
+      )
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') return
+      setIsLoadingMore(false)
+      setStreamPhase(null)
+      setIsError(true)
+      setError(e instanceof Error ? e : new Error(String(e)))
+    }
+  }, [client, isLoadingMore, hasMore, isPending])
 
   useEffect(() => {
     const tokenFn = getToken
@@ -178,7 +245,10 @@ export function usePoseVariants() {
     expectedCount,
     streamPhase,
     mutate,
+    loadMore,
     isPending,
+    isLoadingMore,
+    hasMore,
     isSuccess,
     isError,
     error,

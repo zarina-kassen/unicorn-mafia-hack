@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, RotateCcw, Sparkles } from 'lucide-react'
+import { ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -9,24 +9,20 @@ import {
 import { cn } from '@/lib/utils'
 
 interface CameraTopBarProps {
-  generationLabel: string
-  galleryBusy: boolean
-  onGenerate: () => void
   onPrevPose: () => void
   onNextPose: () => void
   onClearSelection: () => void
   poseCount: number
+  galleryBusy: boolean
   className?: string
 }
 
 export function CameraTopBar({
-  generationLabel,
-  galleryBusy,
-  onGenerate,
   onPrevPose,
   onNextPose,
   onClearSelection,
   poseCount,
+  galleryBusy,
   className,
 }: CameraTopBarProps) {
   const navDisabled = poseCount < 2 || galleryBusy
@@ -90,24 +86,6 @@ export function CameraTopBar({
           <TooltipContent side="bottom">Reset selection</TooltipContent>
         </Tooltip>
       </div>
-
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            size="sm"
-            disabled={galleryBusy}
-            onClick={onGenerate}
-            className="gap-1.5 rounded-full border-cam-button-border bg-cam-button-face font-black text-cam-inverse shadow-cam-button hover:bg-cam-button-face/90"
-          >
-            <Sparkles className="size-3.5" />
-            {generationLabel}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">
-          Capture fresh pose ideas from the current frame
-        </TooltipContent>
-      </Tooltip>
     </div>
   )
 }

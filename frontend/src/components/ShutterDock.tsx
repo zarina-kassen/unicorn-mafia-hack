@@ -109,21 +109,25 @@ export function ShutterDock({
           </Tooltip>
         )}
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              onClick={() => onOpenGallery()}
-              className="size-[52px] shrink-0 overflow-hidden rounded-full border-[2.5px] border-white/90 bg-black/55 p-0 text-white shadow-lg hover:bg-black/65"
-              aria-label="Open pose gallery"
-            >
-              <Images className="size-5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Choose a pose</TooltipContent>
-        </Tooltip>
+        <div className="size-[52px] shrink-0" aria-hidden="true">
+          {!showGenerateButton && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => onOpenGallery()}
+                  className="size-full overflow-hidden rounded-full border-[2.5px] border-white/90 bg-black/55 p-0 text-white shadow-lg hover:bg-black/65"
+                  aria-label="Open pose gallery"
+                >
+                  <Images className="size-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Choose a pose</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
       </div>
     </div>
   )

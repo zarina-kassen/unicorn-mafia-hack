@@ -32,6 +32,7 @@ logfire.instrument_httpx()
 logging.basicConfig(
     handlers=[logfire.LogfireLoggingHandler()],
     level=logging.INFO,
+    force=True,
 )
 logger = logging.getLogger(__name__)
 

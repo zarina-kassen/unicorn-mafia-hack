@@ -64,6 +64,13 @@ def test_health_endpoint() -> None:
     assert body["status"] == "ok"
 
 
+def test_root_redirects_to_health() -> None:
+    client = TestClient(app, follow_redirects=False)
+    r = client.get("/")
+    assert r.status_code == 307
+    assert r.headers["location"] == "/health"
+
+
 def test_pose_variant_rejects_non_image_upload() -> None:
     client = TestClient(app)
     r = client.post(

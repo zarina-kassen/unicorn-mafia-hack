@@ -73,6 +73,51 @@ def test_pose_variant_rejects_non_image_upload() -> None:
     assert r.status_code == 400
 
 
+def test_pose_mask_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    """POST /api/pose-mask returns a stored mask URL (LLM mocked)."""
+    minimal_png_b64 = (
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8"
+        "z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    )
+    mask_data_url = f"data:image/png;base64,{minimal_png_b64}"
+
+    async def fake_load(image_url: str):  # noqa: ARG001
+        return f"data:image/png;base64,{minimal_png_b64}", 1, 1
+
+    async def fake_store(job_id: str, filename: str, binary: bytes, content_type: str) -> str:  # noqa: ARG001
+        return f"http://testserver/api/images/{job_id}/{filename}"
+
+    class FakeChat:
+        async def send_async(self, **kwargs):  # noqa: ANN003
+            return _sample_chat_result_with_image(url=mask_data_url)
+
+    class FakeOpenRouter:
+        def __init__(self) -> None:
+            self.chat = FakeChat()
+
+    monkeypatch.setattr(
+        "app.routes.pose_mask._load_image_data_url_and_dimensions",
+        fake_load,
+    )
+    monkeypatch.setattr("app.routes.pose_mask.store_image", fake_store)
+    app.dependency_overrides[get_openrouter_client] = lambda: FakeOpenRouter()
+    try:
+        client = TestClient(app)
+        r = client.post(
+            "/api/pose-mask",
+            json={"image_url": "/api/images/job1/pose.jpg"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_openrouter_client, None)
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["mask_url"].startswith("http://testserver/api/images/")
+    assert body["width"] >= 1
+    assert body["height"] >= 1
+    assert body["source"] == "llm"
+
+
 def _sample_chat_result_with_image(*, url: str) -> components.ChatResult:
     return components.ChatResult(
         id="chatcmpl-test",
@@ -124,6 +169,10 @@ def test_pose_variants_sse_stream(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr("app.routes.pose_variants.store_image", fake_store_image)
     monkeypatch.setattr("app.routes.pose_variants.get_image", fake_get_image)
+    monkeypatch.setattr(
+        "app.routes.pose_variants.random.sample",
+        lambda population, k, **kwargs: [population[0], population[1]],
+    )
 
     polygon_json = (
         '{"polygon":['
@@ -167,13 +216,25 @@ def test_pose_variants_sse_stream(monkeypatch: pytest.MonkeyPatch) -> None:
                 class Result:
                     output = [
                         PoseTargetSpec(
-                            title="One",
+                            title="Agent-a",
                             instruction="i",
                             rationale="r",
                             approximate_landmarks=[],
                         ),
                         PoseTargetSpec(
-                            title="Two",
+                            title="Agent-b",
+                            instruction="i",
+                            rationale="r",
+                            approximate_landmarks=[],
+                        ),
+                        PoseTargetSpec(
+                            title="Agent-c",
+                            instruction="i",
+                            rationale="r",
+                            approximate_landmarks=[],
+                        ),
+                        PoseTargetSpec(
+                            title="Agent-d",
                             instruction="i",
                             rationale="r",
                             approximate_landmarks=[],
@@ -211,14 +272,14 @@ def test_pose_variants_sse_stream(monkeypatch: pytest.MonkeyPatch) -> None:
     assert types[0] == "phase"
     assert events[0][1]["step"] == "planning"
     assert "target_count" in types
-    assert types.count("pose") == 2
+    assert types.count("pose") == 6
     assert "done" in types
     assert "error" not in types
 
     tc = next(p for t, p in events if t == "target_count")
-    assert tc["count"] == 2
+    assert tc["count"] == 6
     done = next(p for t, p in events if t == "done")
-    assert done["count"] == 2
+    assert done["count"] == 6
     pose_payload = next(p for t, p in events if t == "pose")
     assert "pose" in pose_payload and "outline" in pose_payload
     assert len(pose_payload["outline"]["polygon"]) == 16

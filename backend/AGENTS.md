@@ -83,7 +83,7 @@ uvx ty check .
   `@lru_cache`). This keeps imports and tests fast.
 - The system prompt lives in `SYSTEM_PROMPT` at module level — keep it short and
   structured.
-- Model is configured via `AGENT_MODEL` (default `meta-llama/llama-3.3-70b-instruct`) and `POSE_GUIDE_MODEL` (default `openai/gpt-4o-mini`); FLUX only applies to `FAST_IMAGE_MODEL` image generation.
+- `AGENT_MODEL` powers the Pydantic AI pose-target planner; `POSE_GUIDE_MODEL` + `FAST_IMAGE_MODEL` control outline + image generation on OpenRouter.
 
 ### Error handling
 

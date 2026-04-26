@@ -79,14 +79,18 @@ export function CameraScreen() {
   }, [])
 
   const outlineForSelected = selectedPose ? outlines[selectedPose.id] : null
+  const maskUrlForSelected =
+    selectedPose !== null ? poseVariants.maskUrls[selectedPose.id] : null
   const outlineReadyForSelected =
     selectedPose !== null &&
     Boolean(
       outlineForSelected?.polygon && outlineForSelected.polygon.length >= 3,
     )
+  const maskReadyForSelected = Boolean(maskUrlForSelected)
+  const guideReadyForSelected = maskReadyForSelected || outlineReadyForSelected
 
   const canTakePicture =
-    cameraState.status === 'ready' && !galleryBusy && outlineReadyForSelected
+    cameraState.status === 'ready' && !galleryBusy && guideReadyForSelected
 
   const lastSessionCapture = sessionCaptures[0] ?? null
 
@@ -101,10 +105,10 @@ export function CameraScreen() {
       return 'Hang tight while new poses are generated.'
     }
     if (selectedPose) {
-      if (outlineReadyForSelected) {
+      if (guideReadyForSelected) {
         return `${selectedPose.instruction} Tap the shutter when you are aligned to save a photo.`
       }
-      return `${selectedPose.instruction} Preparing your outline…`
+      return `${selectedPose.instruction} Preparing your pose guide…`
     }
     if (poses.length > 0) {
       return 'Choose a pose in the gallery to show its outline guide.'
@@ -114,7 +118,7 @@ export function CameraScreen() {
     galleryBusy,
     poseVariants.streamPhase,
     selectedPose,
-    outlineReadyForSelected,
+    guideReadyForSelected,
     poses.length,
   ])
 
@@ -293,6 +297,7 @@ export function CameraScreen() {
                   key={selectedPose.id}
                   videoRef={videoRef}
                   outline={outlines[selectedPose.id] ?? null}
+                  photoMaskUrl={poseVariants.maskUrls[selectedPose.id] ?? null}
                 />
               ) : null
             }
@@ -372,7 +377,7 @@ export function CameraScreen() {
           <Button
             type="button"
             size="lg"
-            className="fixed bottom-[calc(108px+env(safe-area-inset-bottom,0px))] left-1/2 z-40 h-12 -translate-x-1/2 rounded-full border-cam-hairline bg-cam-panel/95 px-6 font-black text-cam-ink shadow-cam-panel backdrop-blur-md"
+            className="fixed bottom-[calc(12px+env(safe-area-inset-bottom,0px))] left-1/2 z-40 h-12 -translate-x-1/2 rounded-full border-cam-hairline bg-cam-panel/95 px-6 font-black text-cam-ink shadow-cam-panel backdrop-blur-md"
             onClick={() => setMobileGalleryOpen(true)}
           >
             <Images className="mr-2 size-5" />

@@ -19,6 +19,7 @@ dependencies = [
     "openai>=1.0.0",
     "mubit-sdk>=0.7.0",
     "openrouter>=0.9.1",
+    "Pillow>=10.0",
 ]
 
 [dependency-groups]

@@ -15,6 +15,7 @@ from .routes import (
     health_router,
     images_router,
     memory_router,
+    pose_mask_router,
     pose_variants_router,
 )
 from .storage.database import init_db, start_cleanup_task
@@ -54,4 +55,5 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(images_router)
 app.include_router(memory_router)
+app.include_router(pose_mask_router)
 app.include_router(pose_variants_router)

@@ -7,16 +7,27 @@ import json
 import logging
 import os
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 from openai import OpenAI
 
+from .config import settings
 from .schemas import MemorySeedEntry
 
 logger = logging.getLogger(__name__)
 
-VISION_MODEL = os.getenv("ONBOARDING_VISION_MODEL", "gpt-4.1-mini")
+VISION_MODEL = os.getenv("ONBOARDING_VISION_MODEL", "openai/gpt-4.1-mini")
 MAX_TAGS_PER_FIELD = 5
+
+
+@lru_cache
+def _get_openai_client() -> OpenAI:
+    """Build an OpenAI-compatible client routed through OpenRouter."""
+    return OpenAI(
+        api_key=settings.openrouter_api_key,
+        base_url=settings.openrouter_base_url,
+    )
 
 
 @dataclass(frozen=True)
@@ -117,7 +128,7 @@ def extract_memory_seed_entries(
     """
     if not images:
         return []
-    client = OpenAI()
+    client = _get_openai_client()
     entries: list[MemorySeedEntry] = []
     for image in images:
         entry = _extract_single(client, image)

@@ -79,6 +79,13 @@ class Settings(BaseSettings):
             "Cannot be FLUX — pick any OpenRouter vision+JSON-capable chat model."
         ),
     )
+    onboarding_vision_model: str = Field(
+        default="openai/gpt-4.1-mini",
+        description=(
+            "Vision model for onboarding image extraction (OpenRouter slug). "
+            "Analyses selfie uploads and extracts pose/style/scene tags."
+        ),
+    )
     agent_max_tokens: int = Field(
         default=4096,
         ge=256,

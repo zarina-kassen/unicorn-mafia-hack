@@ -84,7 +84,9 @@ def test_pose_mask_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_load(image_url: str):  # noqa: ARG001
         return f"data:image/png;base64,{minimal_png_b64}", 1, 1
 
-    async def fake_store(job_id: str, filename: str, binary: bytes, content_type: str) -> str:  # noqa: ARG001
+    async def fake_store(
+        job_id: str, filename: str, binary: bytes, content_type: str
+    ) -> str:  # noqa: ARG001
         return f"http://testserver/api/images/{job_id}/{filename}"
 
     class FakeChat:

@@ -65,7 +65,14 @@ async def seed_memory_onboarding_images(
         allow_instagram=False,
         allow_pinterest=False,
     )
-    entries = extract_memory_seed_entries(prepared)
+    try:
+        entries = extract_memory_seed_entries(prepared)
+    except Exception as exc:
+        logger.exception("Onboarding image extraction failed for user=%s", user_id)
+        raise HTTPException(
+            status_code=502,
+            detail=f"image analysis unavailable: {exc}",
+        ) from exc
     if not entries:
         logger.warning("No onboarding entries extracted for user=%s", user_id)
         return MemoryStatusResponse(ok=False)

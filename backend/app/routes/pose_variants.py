@@ -17,9 +17,11 @@ import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from openrouter import OpenRouter, components
+from openrouter.errors import PaymentRequiredResponseError
 from openrouter.types import UNSET
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 
 from ..agents import PoseAgentDeps as AgentDeps, get_pose_generation_agent
 from ..auth.clerk import require_auth
@@ -291,6 +293,12 @@ async def _generate_and_store_image(
         )
         if image_url is None:
             return None
+    except PaymentRequiredResponseError:
+        logger.warning(
+            "Image generation failed for slot %d: OpenRouter credits exhausted",
+            slot_index,
+        )
+        return None
     except Exception as exc:
         logger.exception("Image generation failed for slot %d: %s", slot_index, exc)
         return None
@@ -401,23 +409,30 @@ async def _extract_pose_outline_from_data_url(
     client: OpenRouter,
 ) -> PoseOutlineResponse:
     vision_url = _downscale_data_url_for_vision(data_url)
-    response = await client.chat.send_async(
-        model=settings.resolved_pose_guide_model,
-        messages=[
-            _user_vision_message(text=_outline_prompt_text(), image_data_url=vision_url)
-        ],
-        response_format=components.ChatFormatJSONSchemaConfig(
-            type="json_schema",
-            json_schema=components.ChatJSONSchemaConfig(
-                name="pose_outline",
-                description="Loose silhouette polygon for pose overlay",
-                schema=POSE_OUTLINE_JSON_SCHEMA,
-                strict=True,
+    try:
+        response = await client.chat.send_async(
+            model=settings.resolved_pose_guide_model,
+            messages=[
+                _user_vision_message(
+                    text=_outline_prompt_text(), image_data_url=vision_url
+                )
+            ],
+            response_format=components.ChatFormatJSONSchemaConfig(
+                type="json_schema",
+                json_schema=components.ChatJSONSchemaConfig(
+                    name="pose_outline",
+                    description="Loose silhouette polygon for pose overlay",
+                    schema=POSE_OUTLINE_JSON_SCHEMA,
+                    strict=True,
+                ),
             ),
-        ),
-        max_tokens=settings.pose_guide_max_tokens,
-        stream=False,
-    )
+            max_tokens=settings.pose_guide_max_tokens,
+            stream=False,
+        )
+    except PaymentRequiredResponseError:
+        raise RuntimeError(
+            "OpenRouter credits exhausted — cannot generate outline"
+        ) from None
     if not response.choices:
         raise RuntimeError("empty outline response")
 
@@ -530,14 +545,20 @@ async def create_pose_variants(
         ]
 
         deps = AgentDeps()
-        target_specs_result = await agent.run(
-            f"Generate exactly {POSE_VARIANT_AGENT_SLOTS} diverse, flattering pose targets "
-            f"for portrait photography from the reference image. "
-            f"Vary body angle, arms, and head position; make them distinct from "
-            f"generic studio clichés. Reference image: {reference_image_data_url[:100]}...",
-            deps=deps,
-        )
-        raw_agent = target_specs_result.output
+        try:
+            target_specs_result = await agent.run(
+                f"Generate exactly {POSE_VARIANT_AGENT_SLOTS} diverse, flattering pose targets "
+                f"for portrait photography from the reference image. "
+                f"Vary body angle, arms, and head position; make them distinct from "
+                f"generic studio clichés. Reference image: {reference_image_data_url[:100]}...",
+                deps=deps,
+            )
+            raw_agent = target_specs_result.output
+        except UnexpectedModelBehavior:
+            logger.warning(
+                "Agent output validation failed; falling back to template specs"
+            )
+            raw_agent = []
         agent_specs = _agent_specs_with_fallbacks(
             raw_agent,
             POSE_VARIANT_AGENT_SLOTS,

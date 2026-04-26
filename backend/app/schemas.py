@@ -122,3 +122,73 @@ class MemoryResetRequest(BaseModel):
     """Clear or reduce remembered user taste profile."""
 
     hard_reset: bool = False
+
+
+# --- LinkedIn post agent ---
+
+
+class LinkedInConnectionStatus(BaseModel):
+    """Whether the user has connected LinkedIn (server-side token)."""
+
+    connected: bool
+
+
+class LinkedInOAuthStartResponse(BaseModel):
+    """Browser should navigate to this URL to complete OAuth."""
+
+    authorization_url: str
+    state: str
+
+
+class VisionDimensionPublic(BaseModel):
+    """Four vision scores 0..10 and their mean."""
+
+    composition: float
+    pose_quality: float
+    lighting: float
+    expression: float
+    average: float
+
+
+class ScoredPhotoPublic(BaseModel):
+    """One image after vision scoring."""
+
+    photo_id: str
+    dimensions: VisionDimensionPublic
+
+
+class SequencedPhotoPublic(BaseModel):
+    """Devin-ordered row with a reason."""
+
+    photo_id: str
+    order_index: int
+    reason: str
+    client_id: str | None = None
+
+
+class LinkedInPipelineResponse(BaseModel):
+    """Result after vision rank + top-6 + Devin ordering."""
+
+    mubit_context: str
+    photos_scored: list[ScoredPhotoPublic]
+    top_six: list[ScoredPhotoPublic]
+    sequence: list[SequencedPhotoPublic]
+    # IDs of photos stored for this run (to publish in confirm step)
+    stored_photo_ids: list[str]
+
+
+class LinkedInPublishRequest(BaseModel):
+    """Confirm publish after reviewing sequence."""
+
+    ordered_photo_ids: list[str] = Field(
+        min_length=1, description="Include every image to post, in final order"
+    )
+    as_draft: bool = True
+    sequence: list[SequencedPhotoPublic] | None = None
+
+
+class LinkedInPublishResponse(BaseModel):
+    """UGC result."""
+
+    post_urn: str
+    demo: bool

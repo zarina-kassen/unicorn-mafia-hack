@@ -199,6 +199,48 @@ class MubitMemory:
         except Exception:  # noqa: BLE001
             logger.exception("Mubit reflect failed for user=%s", user_id)
 
+    def recall_linkedin_sequencing_context(self, *, user_id: str) -> str:
+        """Text block for Devin: past LinkedIn order preferences."""
+        query = (
+            "Summarize the user's past LinkedIn multi-image post orderings and any stated "
+            "preferences (e.g. strong opener, casual closer). Be concise, bullet style if needed."
+        )
+        try:
+            response = self._client.recall(
+                session_id=user_id,
+                agent_id=MEMORY_AGENT_ID,
+                query=query,
+                entry_types=["rule", "lesson", "fact"],
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("Mubit LinkedIn recall failed for user=%s", user_id)
+            return ""
+        if not isinstance(response, dict):
+            return ""
+        final_answer = response.get("final_answer")
+        return str(final_answer).strip() if final_answer else ""
+
+    def remember_linkedin_post(
+        self,
+        *,
+        user_id: str,
+        payload: dict[str, Any],
+    ) -> None:
+        """Log published sequence and metadata for future sequencing."""
+        content = json.dumps(payload, separators=(",", ":"), ensure_ascii=True)
+        try:
+            self._client.remember(
+                session_id=user_id,
+                agent_id=MEMORY_AGENT_ID,
+                content=content,
+                intent="fact",
+                source="linkedin_post",
+                metadata={"version": "v1", "type": "linkedin_ordering"},
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("Mubit LinkedIn remember failed for user=%s", user_id)
+        self.reflect_session(user_id=user_id)
+
 
 @lru_cache(maxsize=1)
 def get_mubit_memory() -> MubitMemory:

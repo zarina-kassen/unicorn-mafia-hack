@@ -5,4 +5,8 @@ sample/
 node_modules/
 .env
 backend/.env
+# Local SQLite billing ledger (dev)
+backend/billing.sqlite3
+# Local LinkedIn / saved-photos store (dev)
+backend/linkedin.sqlite3
 .png

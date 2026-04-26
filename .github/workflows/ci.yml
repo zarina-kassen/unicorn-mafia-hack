@@ -45,6 +45,11 @@ jobs:
   backend-test:
     name: "Backend · Test"
     runs-on: ubuntu-latest
+    # Install pytest/ruff/ty (dependency-group `dev`) — some runners set
+    # UV_NO_DEV=1, which would skip them and make `uv run pytest` fail with
+    # exit 2 (cannot spawn pytest).
+    env:
+      UV_NO_DEV: "0"
     defaults:
       run:
         working-directory: backend

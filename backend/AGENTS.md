@@ -10,6 +10,7 @@ Instructions for AI agents working in the `backend/` directory.
 - **Pydantic v2** for all request/response schemas.
 - **Clerk** (`clerk-backend-api`) for JWT authentication.
 - **Mubit SDK** for user taste-memory persistence.
+- **Pydantic Logfire** for observability (traces FastAPI, Pydantic AI, asyncpg, httpx).
 
 ## Key files
 

@@ -136,6 +136,12 @@ class Settings(BaseSettings):
         description="Comma-separated list of allowed CORS origins",
     )
 
+    # Logfire Observability
+    logfire_token: str = Field(
+        default="",
+        description="Logfire write token for sending telemetry (read by logfire SDK via LOGFIRE_TOKEN env var)",
+    )
+
     # Clerk Authentication
     clerk_secret_key: str = Field(
         default="",

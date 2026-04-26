@@ -8,6 +8,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
+from typing import cast
 
 import httpx
 
@@ -150,13 +151,15 @@ async def sequence_for_linkedin(
         if isinstance(o, list):
             tarr: list[tuple[str, str]] = []
             for i, oi in enumerate(o):
-                if isinstance(oi, dict) and isinstance(oi.get("photo_id"), str):
-                    tarr.append(
-                        (
-                            oi["photo_id"],
-                            str(oi.get("reason") or f"Order slot {i + 1}"),
-                        )
-                    )
+                if not isinstance(oi, dict):
+                    continue
+                row = cast(dict[str, object], oi)
+                pid = row.get("photo_id")
+                if not isinstance(pid, str):
+                    continue
+                tarr.append(
+                    (pid, str(row.get("reason") or f"Order slot {i + 1}")),
+                )
             if tarr:
                 arr = tarr
 

@@ -121,13 +121,12 @@ uv run uvicorn app.main:app --reload
 
 Endpoints:
 
-- `GET  /health` — `{ "status": "ok", "model": "gateway/openai:gpt-5.3" }`
+- `GET  /health` — `{ "status": "ok" }`
 - `GET  /api/templates` — template metadata
 - `POST /api/guidance` — `PoseContext` → `GuidanceResponse`
 
-The agent uses `gateway/openai:gpt-5.3` by default; set `AGENT_MODEL` in
-`.env` to any model string supported by Pydantic AI Gateway (e.g.
-`gateway/anthropic:claude-sonnet-4-6`) to swap it out.
+The pose-target planner uses `meta-llama/llama-3.3-70b-instruct` on OpenRouter by default (text only; generated
+images use FLUX via `FAST_IMAGE_MODEL`). Set `AGENT_MODEL` / `POSE_GUIDE_MODEL` in `.env` to any OpenRouter slugs you prefer.
 
 ### Frontend
 
@@ -183,8 +182,8 @@ Browser (React)
                                                         ▼
                                                  FastAPI
                                                  └── Pydantic AI Agent
-                                                      └── gateway/openai:gpt-5.3
-                                                           (via Pydantic AI Gateway)
+                                                      └── meta-llama/llama-3.3-70b-instruct
+                                                           (OpenRouter)
 ```
 
 ## Repo layout

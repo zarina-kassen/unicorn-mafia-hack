@@ -1,17 +1,15 @@
-"""Thin Mubit wrapper for user taste memory.
-
-All methods fail open so camera flows keep working if memory is unavailable.
-"""
+"""Thin Mubit wrapper for user taste memory."""
 
 from __future__ import annotations
 
 import json
 import logging
-import os
 from functools import lru_cache
 from typing import Any
 
 from mubit import Client  # type: ignore[import-not-found]
+
+from .config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +22,7 @@ class MubitMemory:
     def __init__(self, api_key: str, endpoint: str | None = None) -> None:
         kwargs: dict[str, Any] = {
             "api_key": api_key,
-            "transport": os.getenv("MUBIT_TRANSPORT", "auto"),
+            "transport": settings.mubit_transport,
             "run_id": "framemog-runtime",
         }
         if endpoint:
@@ -245,9 +243,9 @@ class MubitMemory:
 
 
 @lru_cache(maxsize=1)
-def get_mubit_memory() -> MubitMemory | None:
-    api_key = os.getenv("MUBIT_API_KEY", "").strip()
-    if not api_key:
-        return None
-    endpoint = os.getenv("MUBIT_ENDPOINT", "").strip() or None
-    return MubitMemory(api_key=api_key, endpoint=endpoint)
+def get_mubit_memory() -> MubitMemory:
+    endpoint = (settings.mubit_endpoint or "").strip() or None
+    return MubitMemory(
+        api_key=settings.mubit_api_key.strip(),
+        endpoint=endpoint,
+    )

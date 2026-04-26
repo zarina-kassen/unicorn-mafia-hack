@@ -1,7 +1,8 @@
 import path from 'path'
 import tailwindcss from '@tailwindcss/vite'
+import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import { defineConfig, type ProxyOptions } from 'vite'
 
 // Set `VITE_TUNNEL=1` when serving through ngrok (or any public URL). The HMR
 // WebSocket often cannot be reached reliably through tunnels; when it drops,
@@ -12,16 +13,28 @@ const tunnelDev =
 const backendTarget = 'http://localhost:8000'
 
 /** Dev proxy: disable socket timeouts so SSE streams are not cut mid-job. */
-const backendProxy = {
+const backendProxy: ProxyOptions = {
   target: backendTarget,
   changeOrigin: true,
   timeout: 0,
   proxyTimeout: 0,
-} as const
+  configure(proxy) {
+    proxy.on('proxyRes', (proxyRes, req) => {
+      const u = req.url ?? ''
+      if (u.includes('pose-variants')) {
+        proxyRes.headers['x-accel-buffering'] = 'no'
+      }
+    })
+  },
+}
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    tanstackRouter({ target: 'react', autoCodeSplitting: true }),
+    react(),
+    tailwindcss(),
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

@@ -33,8 +33,10 @@ Auth is handled by **Clerk** (`@clerk/react` on the frontend,
 │   └── pyproject.toml
 ├── frontend/
 │   ├── src/
-│   │   ├── App.tsx           # Main application & state coordinator
-│   │   ├── main.tsx          # React root with Clerk + React Query providers
+│   │   ├── main.tsx          # React root: Clerk, Query, TanStack Router
+│   │   ├── router.tsx        # TanStack Router instance
+│   │   ├── routes/           # File-based routes (__root, index, camera)
+│   │   ├── pages/            # OnboardingPage, CameraPage
 │   │   ├── pose/             # MediaPipe integration, template matching
 │   │   ├── overlay/          # Canvas-based skeletal rendering
 │   │   ├── camera/           # Webcam hook (useCamera)
@@ -81,7 +83,9 @@ cd frontend && bun run dev
 | `CLERK_AUTHORIZED_PARTIES`   | backend  | Comma-separated allowed origins  |
 | `VITE_CLERK_PUBLISHABLE_KEY` | frontend | Clerk frontend key               |
 | `VITE_BACKEND_URL`           | frontend | Backend base URL (empty for proxy)|
-| `AGENT_MODEL`                | backend  | LLM model string (default `gateway/openai:gpt-5.3`) |
+| `AGENT_MODEL`                | backend  | OpenRouter text planner slug (default `meta-llama/llama-3.3-70b-instruct`; portraits use `FAST_IMAGE_MODEL` / FLUX) |
+| `POSE_GUIDE_MODEL`           | backend  | OpenRouter vision+JSON outline slug (default `openai/gpt-4o-mini`; not FLUX) |
+| `FAST_IMAGE_MODEL`           | backend  | OpenRouter FLUX slug for pose-variant images (default `black-forest-labs/flux.2-klein-4b`; `IMAGE_MODEL` alias) |
 
 ## Commands
 

@@ -7,7 +7,7 @@ from collections.abc import Generator
 import pytest
 from fastapi.testclient import TestClient
 
-from app.auth import require_auth
+from app.auth.clerk import require_auth
 from app.main import app
 from app.linkedin_store import take_oauth_state
 

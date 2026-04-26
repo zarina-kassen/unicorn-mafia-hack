@@ -1,5 +1,15 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 
+import { Button } from '@/components/ui/button'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+
 interface Props {
   children: ReactNode
 }
@@ -40,34 +50,25 @@ export class ErrorBoundary extends Component<Props, State> {
   override render(): ReactNode {
     if (this.state.hasError) {
       return (
-        <div
-          style={{
-            minHeight: '100dvh',
-            padding: 24,
-            color: '#f9fafb',
-            background: '#0a0a0c',
-            fontFamily: 'system-ui, sans-serif',
-          }}
-        >
-          <h1 style={{ fontSize: '1.1rem', margin: '0 0 12px' }}>Something went wrong</h1>
-          <p style={{ opacity: 0.85, margin: '0 0 20px', lineHeight: 1.45 }}>
-            {this.state.message ?? 'Unexpected error'}
-          </p>
-          <button
-            type="button"
-            onClick={this.handleRetry}
-            style={{
-              padding: '10px 18px',
-              borderRadius: 999,
-              border: '1px solid rgba(255,255,255,0.35)',
-              background: 'rgba(255,255,255,0.08)',
-              color: '#fff',
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}
-          >
-            Try again
-          </button>
+        <div className="flex min-h-dvh items-center justify-center bg-background p-6">
+          <Card className="w-full max-w-md border-destructive/30">
+            <CardHeader>
+              <CardTitle>Something went wrong</CardTitle>
+              <CardDescription className="text-destructive">
+                {this.state.message ?? 'Unexpected error'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                Try again. If the problem persists, refresh the page.
+              </p>
+            </CardContent>
+            <CardFooter>
+              <Button type="button" onClick={this.handleRetry}>
+                Try again
+              </Button>
+            </CardFooter>
+          </Card>
         </div>
       )
     }

@@ -86,7 +86,7 @@ async def cleanup_old_images() -> None:
     deleted = (
         await GeneratedImage.delete()
         .where(GeneratedImage.created_at < cutoff)
-        .returning(GeneratedImage.id)
+        .returning(GeneratedImage.job_id)
         .run()
     )
     if len(deleted) > 0:

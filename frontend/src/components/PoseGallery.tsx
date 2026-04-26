@@ -128,8 +128,8 @@ export function PoseGallery(props: PoseGalleryProps) {
           'flex min-h-0 min-w-0 flex-col overflow-hidden rounded-3xl border border-cam-hairline',
           'bg-[linear-gradient(180deg,var(--cam-panel-highlight),transparent_42%),var(--cam-panel)]',
           'shadow-cam-panel backdrop-blur-[22px]',
-          'md:sticky md:top-[max(24px,env(safe-area-inset-top,0px))]',
-          'md:max-h-[min(90dvh,920px)]',
+          'md:sticky md:top-[max(16px,env(safe-area-inset-top,0px))]',
+          'md:max-h-[min(92dvh,860px)]',
         )}
         aria-label="Generated pose gallery"
       >

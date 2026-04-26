@@ -231,30 +231,18 @@ export function CameraScreen() {
     selectedTitle: selectedPose?.title ?? 'Choose a pose',
   }
 
-  const shutterVariant = isMdUp ? 'inline' : 'overlay'
+  const shutterVariant = 'overlay' as const
 
   return (
     <div
       className={cn(
         'relative min-h-dvh w-full overflow-x-hidden',
-        'md:mx-auto md:grid md:max-w-6xl md:grid-cols-[minmax(0,1fr)_280px] md:items-start md:gap-6 md:px-4 md:py-6',
-        'lg:grid-cols-[minmax(0,1fr)_360px]',
+        /* md+: two-column layout (preview | gallery). Preview is the hero. */
+        'md:mx-auto md:grid md:h-dvh md:max-h-dvh md:max-w-6xl md:grid-cols-[minmax(0,1fr)_320px] md:items-stretch md:gap-6 md:px-4 md:py-4',
+        'lg:grid-cols-[minmax(0,1fr)_380px]',
       )}
     >
-      <div className="relative md:flex md:min-h-[min(92dvh,960px)] md:flex-col md:justify-center">
-        {cameraState.status === 'ready' && (
-          <CameraTopBar
-            className="mb-3 hidden w-full max-w-[min(420px,42vw)] px-1 md:mx-auto md:flex"
-            generationLabel={generationCopy}
-            galleryBusy={galleryBusy}
-            onGenerate={handleGenerate}
-            onPrevPose={onPrevPose}
-            onNextPose={onNextPose}
-            onClearSelection={onClearSelection}
-            poseCount={poses.length}
-          />
-        )}
-
+      <div className="relative md:flex md:min-h-0 md:flex-col md:justify-center">
         <div className="relative h-dvh w-full md:h-auto md:min-h-0">
           <CameraFrame
             videoRef={videoRef}
@@ -278,7 +266,7 @@ export function CameraScreen() {
           {cameraState.status === 'ready' && (
             <>
               <CameraTopBar
-                className="absolute left-3 right-3 top-[max(12px,env(safe-area-inset-top,0px))] z-20 md:hidden"
+                className="absolute left-3 right-3 top-[max(12px,env(safe-area-inset-top,0px))] z-20 md:left-4 md:right-4 md:top-4"
                 generationLabel={generationCopy}
                 galleryBusy={galleryBusy}
                 onGenerate={handleGenerate}

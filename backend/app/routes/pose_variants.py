@@ -44,6 +44,7 @@ POSE_VARIANT_TOTAL = 6
 POSE_VARIANT_TEMPLATE_SLOTS = 2
 POSE_VARIANT_AGENT_SLOTS = 4
 
+
 def _agent_specs_with_fallbacks(
     agent_specs: list[PoseTargetSpec],
     k: int,
@@ -399,9 +400,7 @@ async def _extract_pose_outline_from_data_url(
     response = await client.chat.send_async(
         model=settings.pose_guide_model,
         messages=[
-            _user_vision_message(
-                text=_outline_prompt_text(), image_data_url=vision_url
-            )
+            _user_vision_message(text=_outline_prompt_text(), image_data_url=vision_url)
         ],
         response_format=components.ChatFormatJSONSchemaConfig(
             type="json_schema",
@@ -506,9 +505,7 @@ async def create_pose_variants(
         yield _sse_frame("phase", {"step": "planning"})
         job_id = uuid4().hex[:8]
         yield _sse_frame("target_count", {"count": POSE_VARIANT_TOTAL})
-        yield _sse_frame(
-            "phase", {"step": "generating", "count": POSE_VARIANT_TOTAL}
-        )
+        yield _sse_frame("phase", {"step": "generating", "count": POSE_VARIANT_TOTAL})
 
         template_specs = random.sample(
             list(TEMPLATE_POSE_POOL),

@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 
     # AI Model Configuration
     agent_model: str = Field(
-        default="meta-llama/llama-3.3-70b-instruct",
+        default="openai/gpt-5.4-mini",
         description=(
             "Text/structured pose-target planner (OpenRouter chat model). "
             "Cannot be FLUX — FLUX only generates pixels (see FAST_IMAGE_MODEL)."
@@ -59,7 +59,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("FAST_IMAGE_MODEL", "IMAGE_MODEL"),
     )
     heavy_image_model: str = Field(
-        default="black-forest-labs/flux.2-klein-4b",
+        default="black-forest-labs/flux.2",
         description=("High-quality FLUX image model for final captures on OpenRouter."),
     )
     mask_model: str = Field(

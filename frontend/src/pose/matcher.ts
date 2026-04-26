@@ -99,3 +99,24 @@ export function matchTemplate(
   const score = Math.max(0, Math.min(1, (best.score + 1) / 2))
   return { templateId: best.id, score, personVisible: liveNorm.visibility > 0.4 }
 }
+
+/**
+ * Cosine similarity of the live pose to a single target template, mapped to [0, 1].
+ * Use at capture time for the pose the user selected in the gallery.
+ */
+export function matchAgainstTemplate(
+  live: NormalizedLandmark[],
+  target: PoseTemplate,
+): { score: number; personVisible: boolean } {
+  const liveNorm = normalize(live)
+  if (!liveNorm) {
+    return { score: 0, personVisible: false }
+  }
+  const tNorm = normalize(target.landmarks)
+  if (!tNorm) {
+    return { score: 0, personVisible: liveNorm.visibility > 0.4 }
+  }
+  const sim = cosine(liveNorm.vec, tNorm.vec)
+  const score = Math.max(0, Math.min(1, (sim + 1) / 2))
+  return { score, personVisible: liveNorm.visibility > 0.4 }
+}

@@ -23,11 +23,27 @@ import {
   ApiError,
   createPoseVariantJob,
   getBillingAccount,
+  getLinkedInStatus,
   type BillingAccount,
+  type LinkedInPipelineResult,
   type PoseVariantResult,
+  publishLinkedInPost,
+  runLinkedInPipeline,
+  startLinkedInOAuth,
   subscribePoseVariantJob,
   uploadOnboardingGalleryImages,
 } from './backend/client'
+import {
+  blobToBase64,
+  loadAllPhotos,
+  putPhoto,
+  recordToBlob,
+  trimToMax,
+  type SavedPhotoRecord,
+} from './camera/savedPhotosDb'
+import { usePoseLandmarker } from './pose/usePoseLandmarker'
+import { matchAgainstTemplate } from './pose/matcher'
+import type { NormalizedLandmark } from './pose/mediapipe'
 import { Button } from '@/components/ui/button'
 import { WalletSheet } from './components/WalletSheet'
 import './App.css'
@@ -37,6 +53,8 @@ const ONBOARDING_STORAGE_KEY = 'frame-mog-onboarding-gallery-v1'
 
 /** Visible strip when the pose gallery sheet is collapsed (px). */
 const GALLERY_SHEET_PEEK_PX = 80
+const MAX_SESSION_SAVED_PHOTOS = 20
+const DEFAULT_OCCASION = 'general'
 
 type GenerationStatus = 'idle' | 'capturing' | 'generating' | 'ready' | 'failed'
 
@@ -44,6 +62,10 @@ interface SessionCapture {
   id: string
   blob: Blob
   previewUrl: string
+  poseName: string
+  matchConfidence: number
+  occasionType: string
+  capturedAt: string
 }
 
 function captureVideoFrame(video: HTMLVideoElement): Promise<Blob> {
@@ -130,7 +152,13 @@ function App() {
   const [shutterFlashActive, setShutterFlashActive] = useState(false)
   const [sessionCaptures, setSessionCaptures] = useState<SessionCapture[]>([])
   const [captureError, setCaptureError] = useState<string | null>(null)
+  const [linkedInBusy, setLinkedInBusy] = useState(false)
+  const [linkedInPreview, setLinkedInPreview] = useState<LinkedInPipelineResult | null>(null)
+  const [linkedInAsDraft, setLinkedInAsDraft] = useState(true)
+  const [linkedInMessage, setLinkedInMessage] = useState<string | null>(null)
   const sessionCapturesRef = useRef<SessionCapture[]>([])
+  const lastMatchRef = useRef({ score: 0, personVisible: true })
+  const savedPhotosHydratedRef = useRef(false)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -140,6 +168,35 @@ function App() {
     }, 0)
     return () => clearTimeout(t)
   }, [])
+
+  useEffect(() => {
+    if (!onboardingDone || savedPhotosHydratedRef.current) return
+    savedPhotosHydratedRef.current = true
+    void (async () => {
+      try {
+        const rows = await loadAllPhotos()
+        rows.sort((a, b) => b.capturedAt.localeCompare(a.capturedAt))
+        const next: SessionCapture[] = rows.map((r) => {
+          const { blob } = recordToBlob(r)
+          return {
+            id: r.id,
+            blob,
+            previewUrl: URL.createObjectURL(blob),
+            poseName: r.poseName,
+            matchConfidence: r.matchConfidence,
+            occasionType: r.occasionType,
+            capturedAt: r.capturedAt,
+          }
+        })
+        setSessionCaptures((prev) => {
+          for (const c of prev) URL.revokeObjectURL(c.previewUrl)
+          return next.slice(0, MAX_SESSION_SAVED_PHOTOS)
+        })
+      } catch {
+        // IDB failed — keep in-memory only
+      }
+    })()
+  }, [onboardingDone])
 
   const refreshBilling = useCallback(async () => {
     if (!isSignedIn) {
@@ -228,10 +285,25 @@ function App() {
     return galleryPoses.find((pose) => pose.id === selectedPoseId) ?? null
   }, [galleryPoses, selectedPoseId])
 
+  const onLandmarks = useCallback(
+    (lm: NormalizedLandmark[] | null) => {
+      if (!lm || !selectedPose) return
+      const m = matchAgainstTemplate(lm, selectedPose.template)
+      lastMatchRef.current = m
+    },
+    [selectedPose],
+  )
+
   const galleryBusy = generationStatus === 'capturing' || generationStatus === 'generating'
   const hasGeneratedGallery = generationStatus === 'ready'
   /** Outline only for the pose the user explicitly picked in the gallery. */
   const showPoseGuide = selectedPose !== null
+
+  usePoseLandmarker(
+    videoRef,
+    cameraState.status === 'ready' && showPoseGuide,
+    onLandmarks,
+  )
 
   const outlineReadyForSelected =
     selectedPoseId !== null &&
@@ -328,21 +400,50 @@ function App() {
       const blob = await compositeMirroredVideoWithOverlay(videoRef.current, overlay)
       const filename = makeCaptureFilename()
       await tryShareOrDownload(blob, filename)
+      const selected = selectedPose
+      const conf = lastMatchRef.current.score
+      const capturedAt = new Date().toISOString()
+      const itemId = crypto.randomUUID()
+      const previewUrl = URL.createObjectURL(blob)
+      const item: SessionCapture = {
+        id: itemId,
+        blob,
+        previewUrl,
+        poseName: selected?.title ?? 'Unknown',
+        matchConfidence: conf,
+        occasionType: DEFAULT_OCCASION,
+        capturedAt,
+      }
       setSessionCaptures((previous) => {
-        const previewUrl = URL.createObjectURL(blob)
-        const item: SessionCapture = { id: crypto.randomUUID(), blob, previewUrl }
-        const next = [item, ...previous].slice(0, 5)
-        if (previous.length >= 5) {
-          URL.revokeObjectURL(previous[4].previewUrl)
+        const next = [item, ...previous].slice(0, MAX_SESSION_SAVED_PHOTOS)
+        if (previous.length >= MAX_SESSION_SAVED_PHOTOS) {
+          URL.revokeObjectURL(previous[MAX_SESSION_SAVED_PHOTOS - 1].previewUrl)
         }
         return next
       })
+      void (async () => {
+        try {
+          const b64 = await blobToBase64(blob)
+          const rec: SavedPhotoRecord = {
+            id: itemId,
+            imageBase64: b64,
+            poseName: item.poseName,
+            matchConfidence: item.matchConfidence,
+            occasionType: item.occasionType,
+            capturedAt: item.capturedAt,
+          }
+          await putPhoto(rec)
+          await trimToMax(MAX_SESSION_SAVED_PHOTOS)
+        } catch {
+          // persistence best-effort
+        }
+      })()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not save photo.'
       setCaptureError(message)
       window.setTimeout(() => setCaptureError(null), 4200)
     }
-  }, [canTakePicture])
+  }, [canTakePicture, selectedPose])
 
   const onSaveLastCaptureAgain = useCallback(() => {
     const capture = lastSessionCapture
@@ -354,6 +455,67 @@ function App() {
     if (event.target !== event.currentTarget) return
     setShutterFlashActive(false)
   }, [])
+
+  const onPostToLinkedin = useCallback(async () => {
+    if (!isSignedIn || sessionCaptures.length === 0) return
+    setLinkedInMessage(null)
+    setLinkedInBusy(true)
+    setLinkedInPreview(null)
+    try {
+      const st = await getLinkedInStatus(BACKEND_URL, getToken)
+      if (!st.connected) {
+        const start = await startLinkedInOAuth(BACKEND_URL, getToken)
+        window.location.assign(start.authorization_url)
+        return
+      }
+      const form = new FormData()
+      const metas = sessionCaptures.map((c) => ({
+        pose_name: c.poseName,
+        confidence: c.matchConfidence,
+        occasion_type: c.occasionType,
+        captured_at: c.capturedAt,
+        client_id: c.id,
+      }))
+      form.append('metas', JSON.stringify(metas))
+      for (const c of sessionCaptures) {
+        form.append('images', c.blob, `frame-${c.id}.jpg`)
+      }
+      const result = await runLinkedInPipeline(form, BACKEND_URL, getToken)
+      setLinkedInPreview(result)
+    } catch (e) {
+      setLinkedInMessage(
+        e instanceof Error ? e.message : 'Could not run LinkedIn pipeline.',
+      )
+    } finally {
+      setLinkedInBusy(false)
+    }
+  }, [getToken, isSignedIn, sessionCaptures])
+
+  const onLinkedInPublish = useCallback(async () => {
+    if (!linkedInPreview) return
+    setLinkedInMessage(null)
+    setLinkedInBusy(true)
+    try {
+      const ids = linkedInPreview.sequence.map((s) => s.photo_id)
+      await publishLinkedInPost(
+        {
+          ordered_photo_ids: ids,
+          as_draft: linkedInAsDraft,
+          sequence: linkedInPreview.sequence,
+        },
+        BACKEND_URL,
+        getToken,
+      )
+      setLinkedInPreview(null)
+      setLinkedInMessage('Post completed.')
+    } catch (e) {
+      setLinkedInMessage(
+        e instanceof Error ? e.message : 'Could not publish to LinkedIn.',
+      )
+    } finally {
+      setLinkedInBusy(false)
+    }
+  }, [getToken, linkedInAsDraft, linkedInPreview])
 
   useEffect(() => {
     if (!generationJobId || generationStatus !== 'generating') return
@@ -707,7 +869,18 @@ function App() {
                     <span />
                   </button>
                 </div>
-                <div className="camera-shutter-bar__right" aria-hidden="true" />
+                <div className="camera-shutter-bar__right">
+                  <button
+                    type="button"
+                    className="post-linkedin-btn"
+                    disabled={
+                      !isSignedIn || sessionCaptures.length === 0 || linkedInBusy
+                    }
+                    onClick={() => void onPostToLinkedin()}
+                  >
+                    {linkedInBusy ? '…' : 'Post to LinkedIn'}
+                  </button>
+                </div>
               </div>
 
               <div
@@ -852,6 +1025,66 @@ function App() {
             </div>
           )}
         </section>
+        {linkedInPreview ? (
+          <div
+            className="linkedin-confirm"
+            role="dialog"
+            aria-label="Review LinkedIn post order"
+          >
+            <div className="linkedin-confirm__panel">
+              <h3>Review order</h3>
+              <p className="linkedin-confirm__text">
+                Confirm the sequence, then publish or save as draft.
+              </p>
+              <ol className="linkedin-confirm__list">
+                {linkedInPreview.sequence.map((row) => {
+                  const localId = row.client_id ?? null
+                  const cap = localId
+                    ? sessionCaptures.find((c) => c.id === localId)
+                    : null
+                  return (
+                    <li key={row.photo_id}>
+                      {cap ? (
+                        <img src={cap.previewUrl} alt="" className="linkedin-confirm__thumb" />
+                      ) : null}
+                      <span>{row.reason}</span>
+                    </li>
+                  )
+                })}
+              </ol>
+              <label className="linkedin-confirm__draft">
+                <input
+                  type="checkbox"
+                  checked={linkedInAsDraft}
+                  onChange={(e) => setLinkedInAsDraft(e.target.checked)}
+                />
+                Save as draft
+              </label>
+              <div className="linkedin-confirm__actions">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setLinkedInPreview(null)}
+                  disabled={linkedInBusy}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => void onLinkedInPublish()}
+                  disabled={linkedInBusy}
+                >
+                  {linkedInBusy ? 'Publishing…' : 'Confirm'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        {linkedInMessage && !linkedInPreview ? (
+          <p className="linkedin-toast" role="status">
+            {linkedInMessage}
+          </p>
+        ) : null}
       </main>
     </div>
   )

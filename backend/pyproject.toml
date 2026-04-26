@@ -16,6 +16,7 @@ dependencies = [
     "botocore>=1.34.0",
     "mubit-sdk>=0.5.3",
     "stripe>=12.5.0",
+    "httpx>=0.28.1",
 ]
 
 [dependency-groups]
@@ -27,4 +28,8 @@ dev = [
 ]
 
 [tool.ty.src]
-exclude = ["app/storage.py", "app/memory_onboarding.py"]
+exclude = [
+    "app/storage.py",
+    "app/memory_onboarding.py",
+    "app/linkedin_devin.py",
+]

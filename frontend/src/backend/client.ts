@@ -148,6 +148,102 @@ export async function createCheckoutSession(
   return (await res.json()) as CheckoutSessionResponse
 }
 
+export interface LinkedInConnectionStatus {
+  connected: boolean
+}
+
+export interface LinkedInOAuthStart {
+  authorization_url: string
+  state: string
+}
+
+export interface VisionDimensionPublic {
+  composition: number
+  pose_quality: number
+  lighting: number
+  expression: number
+  average: number
+}
+
+export interface ScoredPhotoPublic {
+  photo_id: string
+  dimensions: VisionDimensionPublic
+}
+
+export interface SequencedPhotoPublic {
+  photo_id: string
+  order_index: number
+  reason: string
+  client_id?: string | null
+}
+
+export interface LinkedInPipelineResult {
+  mubit_context: string
+  photos_scored: ScoredPhotoPublic[]
+  top_six: ScoredPhotoPublic[]
+  sequence: SequencedPhotoPublic[]
+  stored_photo_ids: string[]
+}
+
+export interface LinkedInPublishResult {
+  post_urn: string
+  demo: boolean
+}
+
+export async function getLinkedInStatus(
+  baseUrl = '',
+  getToken?: GetToken,
+): Promise<LinkedInConnectionStatus> {
+  const headers = await withAuthHeaders(getToken)
+  const res = await fetch(`${baseUrl}/api/linkedin/status`, { headers })
+  if (!res.ok) {
+    throw await parseApiError(res, `LinkedIn status failed (${res.status})`)
+  }
+  return (await res.json()) as LinkedInConnectionStatus
+}
+
+export async function startLinkedInOAuth(
+  baseUrl = '',
+  getToken?: GetToken,
+): Promise<LinkedInOAuthStart> {
+  const headers = await withAuthHeaders(getToken)
+  const res = await fetch(`${baseUrl}/api/linkedin/oauth/authorize`, { headers })
+  if (!res.ok) {
+    throw await parseApiError(res, `LinkedIn OAuth start failed (${res.status})`)
+  }
+  return (await res.json()) as LinkedInOAuthStart
+}
+
+export async function runLinkedInPipeline(
+  form: FormData,
+  baseUrl = '',
+  getToken?: GetToken,
+): Promise<LinkedInPipelineResult> {
+  const headers = await withAuthHeaders(getToken)
+  const res = await fetch(`${baseUrl}/api/linkedin/pipeline`, { method: 'POST', headers, body: form })
+  if (!res.ok) {
+    throw await parseApiError(res, `LinkedIn pipeline failed (${res.status})`)
+  }
+  return (await res.json()) as LinkedInPipelineResult
+}
+
+export async function publishLinkedInPost(
+  body: { ordered_photo_ids: string[]; as_draft: boolean; sequence?: SequencedPhotoPublic[] | null },
+  baseUrl = '',
+  getToken?: GetToken,
+): Promise<LinkedInPublishResult> {
+  const headers = await withAuthHeaders(getToken, { 'content-type': 'application/json' })
+  const res = await fetch(`${baseUrl}/api/linkedin/publish`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    throw await parseApiError(res, `LinkedIn publish failed (${res.status})`)
+  }
+  return (await res.json()) as LinkedInPublishResult
+}
+
 export async function createPoseVariantJob(
   referenceImage: Blob,
   baseUrl = '',

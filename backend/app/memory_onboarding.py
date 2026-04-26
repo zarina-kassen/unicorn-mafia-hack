@@ -23,13 +23,7 @@ MAX_TAGS_PER_FIELD = 5
 
 @lru_cache
 def _get_openai_client() -> OpenAI:
-    """Build an OpenAI client using the best available credentials.
-
-    Prefers a dedicated ``OPENAI_API_KEY`` when set.  Otherwise falls back
-    to the OpenRouter key + base-URL that every other route already uses.
-    """
-    if settings.openai_api_key:
-        return OpenAI(api_key=settings.openai_api_key)
+    """Build an OpenAI-compatible client routed through OpenRouter."""
     return OpenAI(
         api_key=settings.openrouter_api_key,
         base_url=settings.openrouter_base_url,

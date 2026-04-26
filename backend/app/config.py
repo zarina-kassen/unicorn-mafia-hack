@@ -51,7 +51,7 @@ class Settings(BaseSettings):
         ),
     )
     fast_image_model: str = Field(
-        default="black-forest-labs/flux.2-klein-4b",
+        default="black-forest-labs/flux.2-flex",
         description=(
             "Fast FLUX image model for pose variants on OpenRouter "
             "(env FAST_IMAGE_MODEL; legacy IMAGE_MODEL also accepted)."

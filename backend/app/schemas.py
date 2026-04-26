@@ -54,50 +54,28 @@ class PoseVariantResult(BaseModel):
     model: str
 
 
-class ImageUrl(BaseModel):
-    """Image URL structure from OpenRouter response."""
+class PoseOutlinePoint(BaseModel):
+    """One vertex of a silhouette outline in normalized image coordinates."""
 
-    url: str
-
-
-class OpenRouterImage(BaseModel):
-    """Image structure from OpenRouter chat completions response."""
-
-    type: str = "image_url"
-    image_url: ImageUrl
+    x: float = Field(ge=0.0, le=1.0)
+    y: float = Field(ge=0.0, le=1.0)
 
 
-class OpenRouterMessage(BaseModel):
-    """Assistant message from OpenRouter chat completions."""
+class PoseOutlineResponse(BaseModel):
+    """Closed silhouette polygon plus source image pixel size for mapping."""
 
-    images: list[OpenRouterImage] = Field(default_factory=list)
-
-
-class OpenRouterChoice(BaseModel):
-    """Choice from OpenRouter chat completions."""
-
-    message: OpenRouterMessage
-
-
-class OpenRouterChatResponse(BaseModel):
-    """OpenRouter chat completions response."""
-
-    choices: list[OpenRouterChoice] = Field(default_factory=list)
-
-
-class PoseMaskRequest(BaseModel):
-    """Request to extract a person mask from an image."""
-
-    image_url: str = Field(min_length=1)
-
-
-class PoseMaskResponse(BaseModel):
-    """Mask image metadata returned by the LLM extraction pipeline."""
-
-    mask_url: str = Field(min_length=1)
+    polygon: list[PoseOutlinePoint] = Field(min_length=16, max_length=28)
     width: int = Field(ge=1)
     height: int = Field(ge=1)
     source: str = Field(min_length=1)
+    model: str = Field(min_length=1)
+
+
+class PoseStreamItem(BaseModel):
+    """One streamed pose variant with its silhouette outline."""
+
+    pose: PoseVariantResult
+    outline: PoseOutlineResponse
 
 
 class MemorySeedEntry(BaseModel):

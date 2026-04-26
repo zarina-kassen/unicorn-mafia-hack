@@ -9,7 +9,6 @@ import {
 
 import { useCamera } from './hooks/useCamera'
 import { usePoseVariants } from './hooks/usePoseVariants'
-import { usePoseMask } from './hooks/usePoseMask'
 import { useOnboarding } from './hooks/useOnboarding'
 import { PoseOverlay } from './components/PoseOverlay'
 import { Button } from '@/components/ui/button'
@@ -25,12 +24,16 @@ function App() {
   const { done: onboardingDone, files, setFiles, allowLearning, setAllowLearning, skip: skipOnboarding, mutation: onboardingMutation } = useOnboarding()
 
   const poses = useMemo(() => poseVariants.data ?? [], [poseVariants.data])
-  const { maskUrls } = usePoseMask(poses)
+  const outlines = poseVariants.outlines
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const activeId = poseVariants.isPending ? null : (selectedId ?? poses[0]?.id ?? null)
+  const activeId = selectedId ?? poses[0]?.id ?? null
   const selectedPose = useMemo(() => poses.find((p) => p.id === activeId) ?? null, [poses, activeId])
 
   const galleryBusy = poseVariants.isPending
+  const targetTotal =
+    poseVariants.expectedCount > 0 ? poseVariants.expectedCount : (galleryBusy ? 6 : 0)
+  const skeletonSlots =
+    galleryBusy && targetTotal > poses.length ? targetTotal - poses.length : 0
   const galleryVisible = cameraState.status === 'ready' && (galleryBusy || poses.length > 0 || poseVariants.isError)
 
   const gallerySheetRef = useRef<HTMLElement>(null)
@@ -69,6 +72,7 @@ function App() {
 
   const handleGenerate = useCallback(() => {
     if (cameraState.status !== 'ready' || !videoRef.current || galleryBusy) return
+    setSelectedId(null)
     poseVariants.mutate(videoRef.current)
   }, [cameraState.status, galleryBusy, poseVariants])
 
@@ -204,7 +208,7 @@ function App() {
             <PoseOverlay
               key={selectedPose.id}
               videoRef={videoRef}
-              photoMaskUrl={maskUrls[selectedPose.id] ?? null}
+              outline={outlines[selectedPose.id] ?? null}
             />
           )}
 
@@ -253,10 +257,7 @@ function App() {
 
                   <div className="gallery-rail">
                     <div className="gallery-track">
-                      {galleryBusy && Array.from({ length: 6 }).map((_, i) => (
-                        <div className="pose-card skeleton" key={`sk-${i}`}><span /></div>
-                      ))}
-                      {!galleryBusy && poses.map((pose) => (
+                      {poses.map((pose) => (
                         <button
                           className={pose.id === activeId ? 'pose-card active' : 'pose-card'}
                           type="button"
@@ -267,6 +268,9 @@ function App() {
                           <img src={pose.imageSrc} alt={pose.title} />
                           <span>{pose.title}</span>
                         </button>
+                      ))}
+                      {galleryBusy && Array.from({ length: skeletonSlots }).map((_, i) => (
+                        <div className="pose-card skeleton" key={`sk-${i}`}><span /></div>
                       ))}
                     </div>
                   </div>

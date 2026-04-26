@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, ModelSettings
 from pydantic_ai.models.openai import OpenAIChatModel
 
 from ..config import settings
@@ -37,9 +37,11 @@ def get_pose_generation_agent() -> Agent[PoseAgentDeps, list[PoseTargetSpec]]:
     os.environ["OPENAI_BASE_URL"] = settings.openrouter_base_url
 
     model = OpenAIChatModel(settings.agent_model, provider="openai")
+    model_settings: ModelSettings = {"max_tokens": settings.agent_max_tokens}
     return Agent[PoseAgentDeps, list[PoseTargetSpec]](
         model=model,
         deps_type=PoseAgentDeps,
         output_type=list[PoseTargetSpec],
+        model_settings=model_settings,
         system_prompt="You are a pose generation expert. Generate diverse, flattering pose targets for portrait photography based on a reference image.",
     )

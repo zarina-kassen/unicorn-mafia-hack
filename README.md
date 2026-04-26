@@ -121,13 +121,12 @@ uv run uvicorn app.main:app --reload
 
 Endpoints:
 
-- `GET  /health` — `{ "status": "ok", "model": "gateway/openai:gpt-5.3" }`
+- `GET  /health` — `{ "status": "ok", "model": "openai/gpt-5.4-mini" }` (or your `AGENT_MODEL`)
 - `GET  /api/templates` — template metadata
 - `POST /api/guidance` — `PoseContext` → `GuidanceResponse`
 
-The agent uses `gateway/openai:gpt-5.3` by default; set `AGENT_MODEL` in
-`.env` to any model string supported by Pydantic AI Gateway (e.g.
-`gateway/anthropic:claude-sonnet-4-6`) to swap it out.
+The pose agent uses `openai/gpt-5.4-mini` on OpenRouter by default; set `AGENT_MODEL` in
+`.env` to any OpenRouter chat model slug you prefer.
 
 ### Frontend
 
@@ -183,8 +182,8 @@ Browser (React)
                                                         ▼
                                                  FastAPI
                                                  └── Pydantic AI Agent
-                                                      └── gateway/openai:gpt-5.3
-                                                           (via Pydantic AI Gateway)
+                                                      └── openai/gpt-5.4-mini
+                                                           (OpenRouter)
 ```
 
 ## Repo layout

@@ -59,9 +59,6 @@ async def seed_memory_onboarding_images(
         )
 
     memory = get_mubit_memory()
-    if not memory:
-        return MemoryStatusResponse(ok=False)
-
     memory.remember_preferences(
         user_id=user_id,
         allow_camera_roll=allow_camera_roll,
@@ -91,8 +88,6 @@ def set_memory_preferences(
     user_id: str = Depends(require_auth),
 ) -> MemoryStatusResponse:
     memory = get_mubit_memory()
-    if not memory:
-        return MemoryStatusResponse(ok=False)
     memory.remember_preferences(
         user_id=user_id,
         allow_camera_roll=payload.allow_camera_roll,
@@ -108,7 +103,5 @@ def reset_memory_profile(
     user_id: str = Depends(require_auth),
 ) -> MemoryStatusResponse:
     memory = get_mubit_memory()
-    if not memory:
-        return MemoryStatusResponse(ok=False)
     memory.reset_user_memory(user_id=user_id, hard_reset=payload.hard_reset)
     return MemoryStatusResponse(ok=True)

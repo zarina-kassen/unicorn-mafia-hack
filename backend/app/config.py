@@ -34,14 +34,46 @@ class Settings(BaseSettings):
         description="OpenAI API key",
     )
 
+    # Mubit (required for memory routes; validated at startup)
+    mubit_api_key: str = Field(
+        default="",
+        description="Mubit API key",
+    )
+    mubit_endpoint: str | None = Field(
+        default=None,
+        description="Optional Mubit API base URL",
+    )
+    mubit_transport: str = Field(
+        default="auto",
+        description="Mubit client transport (e.g. auto, http)",
+    )
+
     # AI Model Configuration
     agent_model: str = Field(
-        default="openai/gpt-4.1-mini",
-        description="Model for pose generation agent",
+        default="openai/gpt-5.4-mini",
+        description="Model for pose generation agent (OpenRouter slug)",
     )
     image_model: str = Field(
         default="black-forest-labs/flux.2-pro",
         description="Image generation model",
+    )
+    pose_guide_model: str = Field(
+        default="google/gemini-3.1-pro-preview",
+        description=(
+            "Vision LLM that returns a loose hand-drawn-style silhouette polygon "
+            "(normalized x,y vertices) for a generated pose image. Must support "
+            "image input and JSON Schema structured outputs on OpenRouter."
+        ),
+    )
+    agent_max_tokens: int = Field(
+        default=8192,
+        ge=256,
+        description="Max completion tokens for the pose-target planning agent (OpenRouter bills against this cap).",
+    )
+    pose_guide_max_tokens: int = Field(
+        default=2048,
+        ge=256,
+        description="Max completion tokens for vision outline JSON (small structured output).",
     )
 
     # Storage Configuration
@@ -90,18 +122,11 @@ class Settings(BaseSettings):
 # Global settings instance
 settings: Final[Settings] = Settings()
 
-# Export individual settings for backward compatibility (will be removed)
-OPENROUTER_API_KEY = settings.openrouter_api_key
-OPENROUTER_BASE_URL = settings.openrouter_base_url
-AGENT_MODEL = settings.agent_model
-IMAGE_MODEL = settings.image_model
-GENERATED_TTL_SECONDS = settings.generated_ttl_seconds
-ALLOWED_ORIGINS = settings.allowed_origins_list
-CLERK_SECRET_KEY = settings.clerk_secret_key
-CLERK_AUTHORIZED_PARTIES = settings.clerk_authorized_parties_list
 
-
-def validate_config() -> None:
+def validate_config(*, _settings: Settings | None = None) -> None:
     """Validate that required configuration is set."""
-    if not settings.openrouter_api_key:
+    cfg = _settings if _settings is not None else settings
+    if not (cfg.openrouter_api_key or "").strip():
         raise ValueError("OPENROUTER_API_KEY environment variable is required")
+    if not (cfg.mubit_api_key or "").strip():
+        raise ValueError("MUBIT_API_KEY environment variable is required")

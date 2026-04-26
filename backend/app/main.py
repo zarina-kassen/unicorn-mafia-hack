@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .config import settings
+from .config import settings, validate_config
 from .routes import (
     health_router,
     images_router,
@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Manage application lifespan: DB init and cleanup task."""
     # Startup
+    validate_config()
     await init_db()
     cleanup_task = asyncio.create_task(start_cleanup_task())
     yield

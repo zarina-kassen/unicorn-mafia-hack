@@ -10,8 +10,10 @@ services:
     envVars:
       - key: OPENROUTER_API_KEY
         sync: false
+      - key: MUBIT_API_KEY
+        sync: false
       - key: AGENT_MODEL
-        value: openai/gpt-5-mini
+        value: openai/gpt-5.4-mini
       - key: CLERK_SECRET_KEY
         sync: false
       - key: CLERK_AUTHORIZED_PARTIES
@@ -26,6 +28,12 @@ services:
         value: black-forest-labs/flux-schnell
       - key: HQ_IMAGE_MODEL
         value: openai/gpt-image-1
+      - key: POSE_GUIDE_MODEL
+        value: google/gemini-3.1-pro-preview
+      - key: POSE_GUIDE_MAX_TOKENS
+        value: "2048"
+      - key: AGENT_MAX_TOKENS
+        value: "8192"
 
   # ── PostgreSQL Database ──
   - type: pserv

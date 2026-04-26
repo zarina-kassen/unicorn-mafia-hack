@@ -1,17 +1,22 @@
 import { useEffect, useRef } from 'react'
-import { outlineFromPersonMaskGrid, type NormPoint } from '../pose/maskToOutline'
+import type { PoseOutlineResponse } from '../api/poseVariants'
 
 interface PoseOverlayProps {
   videoRef: React.RefObject<HTMLVideoElement | null>
-  /** LLM-generated white-on-transparent person mask URL. */
-  photoMaskUrl?: string | null
+  /** Vision-LLM silhouette polygon in normalized image coordinates. */
+  outline?: PoseOutlineResponse | null
   paused?: boolean
 }
 
-interface PreparedMask {
-  canvas: HTMLCanvasElement
-  bbox: { x: number; y: number; width: number; height: number } | null
-  outlineNorm: NormPoint[] | null
+interface NormPoint {
+  x: number
+  y: number
+}
+
+interface PreparedOutline {
+  outlineNorm: NormPoint[]
+  /** Normalized bbox of the polygon (same space as original x,y). */
+  bbox: { x: number; y: number; width: number; height: number }
 }
 
 interface Point {
@@ -37,152 +42,44 @@ function traceSmoothClosedContour(ctx: CanvasRenderingContext2D, points: Point[]
   ctx.closePath()
 }
 
-function makeAlphaMaskCanvas(image: CanvasImageSource, width: number, height: number): PreparedMask {
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, Math.floor(width))
-  canvas.height = Math.max(1, Math.floor(height))
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return { canvas, bbox: null, outlineNorm: null }
-  ctx.clearRect(0, 0, canvas.width, canvas.height)
-  ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
-  const img = ctx.getImageData(0, 0, canvas.width, canvas.height)
-  const data = img.data
+function prepareOutline(outline: PoseOutlineResponse): PreparedOutline | null {
+  const poly = outline.polygon
+  if (poly.length < 3) return null
 
-  const w = canvas.width
-  const h = canvas.height
-  const n = w * h
-  const keep = new Uint8Array(n)
-  const alphaCoverage = (() => {
-    let visible = 0
-    for (let i = 3; i < data.length; i += 4) if (data[i] > 16) visible += 1
-    return visible / n
-  })()
-
-  if (alphaCoverage > 0.02 && alphaCoverage < 0.98) {
-    for (let idx = 0; idx < n; idx += 1) {
-      const i = idx * 4
-      keep[idx] = data[i + 3] > 16 ? 1 : 0
-    }
-  } else {
-    // LLM often returns white foreground over gray/checker background with opaque alpha.
-    let cornerSum = 0
-    let cornerSq = 0
-    let cornerN = 0
-    const sampleRadius = Math.max(6, Math.floor(Math.min(w, h) * 0.02))
-    for (let y = 0; y < h; y += 1) {
-      for (let x = 0; x < w; x += 1) {
-        const isCorner =
-          (x < sampleRadius && y < sampleRadius) ||
-          (x >= w - sampleRadius && y < sampleRadius) ||
-          (x < sampleRadius && y >= h - sampleRadius) ||
-          (x >= w - sampleRadius && y >= h - sampleRadius)
-        if (!isCorner) continue
-        const i = (y * w + x) * 4
-        const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
-        cornerSum += lum
-        cornerSq += lum * lum
-        cornerN += 1
-      }
-    }
-    const mean = cornerN > 0 ? cornerSum / cornerN : 200
-    const variance = cornerN > 0 ? Math.max(0, cornerSq / cornerN - mean * mean) : 100
-    const std = Math.sqrt(variance)
-    const threshold = Math.min(250, Math.max(210, mean + std * 1.8))
-
-    for (let idx = 0; idx < n; idx += 1) {
-      const i = idx * 4
-      const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
-      keep[idx] = lum >= threshold ? 1 : 0
-    }
+  let minX = 1
+  let minY = 1
+  let maxX = 0
+  let maxY = 0
+  for (const p of poly) {
+    minX = Math.min(minX, p.x)
+    minY = Math.min(minY, p.y)
+    maxX = Math.max(maxX, p.x)
+    maxY = Math.max(maxY, p.y)
   }
+  const bw = Math.max(1e-6, maxX - minX)
+  const bh = Math.max(1e-6, maxY - minY)
+  if (bw < 0.02 || bh < 0.02) return null
 
-  // Keep largest connected foreground component only.
-  const q = new Int32Array(n)
-  const visited = new Uint8Array(n)
-  let bestCount = 0
-  let bestIndices: Int32Array | null = null
-  for (let seed = 0; seed < n; seed += 1) {
-    if (!keep[seed] || visited[seed]) continue
-    let qh = 0
-    let qt = 0
-    q[qt++] = seed
-    visited[seed] = 1
-    while (qh < qt) {
-      const idx = q[qh++]
-      const x = idx % w
-      const y = (idx - x) / w
-      const push = (nIdx: number) => {
-        if (!keep[nIdx] || visited[nIdx]) return
-        visited[nIdx] = 1
-        q[qt++] = nIdx
-      }
-      if (x > 0) push(idx - 1)
-      if (x + 1 < w) push(idx + 1)
-      if (y > 0) push(idx - w)
-      if (y + 1 < h) push(idx + w)
-    }
-    if (qt > bestCount) {
-      bestCount = qt
-      bestIndices = q.slice(0, qt)
-    }
-  }
+  const outlineNorm: NormPoint[] = poly.map((p) => ({
+    x: (p.x - minX) / bw,
+    y: (p.y - minY) / bh,
+  }))
 
-  keep.fill(0)
-  if (bestIndices) {
-    for (let i = 0; i < bestIndices.length; i += 1) keep[bestIndices[i]] = 1
+  return {
+    outlineNorm,
+    bbox: { x: minX, y: minY, width: bw, height: bh },
   }
-
-  let minX = w
-  let minY = h
-  let maxX = -1
-  let maxY = -1
-
-  for (let idx = 0; idx < n; idx += 1) {
-    const i = idx * 4
-    data[i] = 255
-    data[i + 1] = 255
-    data[i + 2] = 255
-    const isFg = keep[idx] === 1
-    data[i + 3] = isFg ? 255 : 0
-    if (isFg) {
-      const x = idx % w
-      const y = (idx - x) / w
-      if (x < minX) minX = x
-      if (y < minY) minY = y
-      if (x > maxX) maxX = x
-      if (y > maxY) maxY = y
-    }
-  }
-  ctx.putImageData(img, 0, 0)
-  const bbox =
-    maxX >= minX && maxY >= minY
-      ? { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 }
-      : null
-  let outlineNorm: NormPoint[] | null = null
-  if (bbox && bbox.width >= 3 && bbox.height >= 3) {
-    const grid = new Float32Array(bbox.width * bbox.height)
-    for (let y = 0; y < bbox.height; y += 1) {
-      for (let x = 0; x < bbox.width; x += 1) {
-        const srcIdx = (bbox.y + y) * w + (bbox.x + x)
-        grid[y * bbox.width + x] = keep[srcIdx] ? 1 : 0
-      }
-    }
-    outlineNorm = outlineFromPersonMaskGrid(grid, bbox.width, bbox.height)
-  }
-  return { canvas, bbox, outlineNorm }
 }
 
-function drawMaskSilhouette(
+function drawOutlineSilhouette(
   ctx: CanvasRenderingContext2D,
-  prepared: PreparedMask,
+  prepared: PreparedOutline,
   width: number,
   height: number,
   dpr: number,
 ): void {
-  const bbox = prepared.bbox
-  if (!bbox) return
+  const { bbox } = prepared
 
-  // Fit subject to target size similar to camera guide UX.
   const targetHeight = height * 0.82
   const scale = Math.max(0.1, targetHeight / bbox.height)
   const drawW = bbox.width * scale
@@ -197,7 +94,7 @@ function drawMaskSilhouette(
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
   const outline = prepared.outlineNorm
-  if (!outline || outline.length < 3) {
+  if (outline.length < 3) {
     ctx.restore()
     return
   }
@@ -206,7 +103,6 @@ function drawMaskSilhouette(
     y: dy + p.y * drawH,
   }))
 
-  // Soft glow stroke.
   ctx.beginPath()
   traceSmoothClosedContour(ctx, projected)
   ctx.filter = `blur(${glow}px)`
@@ -216,7 +112,6 @@ function drawMaskSilhouette(
   ctx.lineCap = 'round'
   ctx.stroke()
 
-  // Main crisp contour (line only, no fill).
   ctx.beginPath()
   traceSmoothClosedContour(ctx, projected)
   ctx.filter = 'none'
@@ -230,42 +125,15 @@ function drawMaskSilhouette(
 
 export function PoseOverlay({
   videoRef,
-  photoMaskUrl = null,
+  outline = null,
   paused = false,
 }: PoseOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const preparedMaskRef = useRef<PreparedMask | null>(null)
+  const preparedRef = useRef<PreparedOutline | null>(null)
 
   useEffect(() => {
-    if (!photoMaskUrl) {
-      preparedMaskRef.current = null
-      return
-    }
-    let cancelled = false
-    void (async () => {
-      try {
-        const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-          const img = new Image()
-          img.crossOrigin = 'anonymous'
-          img.onload = () => resolve(img)
-          img.onerror = () => reject(new Error('Mask image failed to load'))
-          img.src = photoMaskUrl
-        })
-        if (cancelled) return
-        preparedMaskRef.current = makeAlphaMaskCanvas(
-          image,
-          image.naturalWidth || image.width || 1,
-          image.naturalHeight || image.height || 1,
-        )
-      } catch {
-        if (cancelled) return
-        preparedMaskRef.current = null
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [photoMaskUrl])
+    preparedRef.current = outline ? prepareOutline(outline) : null
+  }, [outline])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -294,9 +162,9 @@ export function PoseOverlay({
         const dpr = window.devicePixelRatio || 1
         ctx.clearRect(0, 0, canvas.width, canvas.height)
         if (!paused) {
-          const preparedMask = preparedMaskRef.current
-          if (preparedMask) {
-            drawMaskSilhouette(ctx, preparedMask, canvas.width, canvas.height, dpr)
+          const prepared = preparedRef.current
+          if (prepared) {
+            drawOutlineSilhouette(ctx, prepared, canvas.width, canvas.height, dpr)
           }
         }
       }

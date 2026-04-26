@@ -1,6 +1,10 @@
 import { useAuth } from '@clerk/react'
-import { useMutation } from '@tanstack/react-query'
-import { PoseVariantsClient, type PoseVariantResult } from '../api/poseVariants'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import {
+  PoseVariantsClient,
+  type PoseOutlineResponse,
+  type PoseVariantResult,
+} from '../api/poseVariants'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? ''
 
@@ -42,13 +46,86 @@ function captureFrame(video: HTMLVideoElement): Promise<Blob> {
 
 export function usePoseVariants() {
   const { getToken } = useAuth()
-  const client = new PoseVariantsClient(getToken)
+  const client = useMemo(() => new PoseVariantsClient(getToken), [getToken])
+  const abortRef = useRef<AbortController | null>(null)
 
-  return useMutation({
-    mutationFn: async (videoEl: HTMLVideoElement) => {
-      const frame = await captureFrame(videoEl)
-      const results = await client.createJob(frame)
-      return results.map(toGalleryPose)
+  const [variants, setVariants] = useState<PoseVariantResult[]>([])
+  const [outlines, setOutlines] = useState<Record<string, PoseOutlineResponse>>({})
+  const [expectedCount, setExpectedCount] = useState(0)
+  const [isPending, setIsPending] = useState(false)
+  const [isSuccess, setIsSuccess] = useState(false)
+  const [isError, setIsError] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const poses = useMemo(
+    () =>
+      [...variants]
+        .sort((a, b) => a.slot_index - b.slot_index)
+        .map(toGalleryPose),
+    [variants],
+  )
+
+  const mutate = useCallback(
+    async (videoEl: HTMLVideoElement) => {
+      abortRef.current?.abort()
+      const ac = new AbortController()
+      abortRef.current = ac
+      setIsPending(true)
+      setIsSuccess(false)
+      setIsError(false)
+      setError(null)
+      setVariants([])
+      setOutlines({})
+      setExpectedCount(0)
+
+      try {
+        const frame = await captureFrame(videoEl)
+        await client.stream(
+          frame,
+          {
+            onTargetCount: (count) => setExpectedCount(count),
+            onPose: ({ pose, outline }) => {
+              setVariants((prev) =>
+                [...prev.filter((p) => p.id !== pose.id), pose].sort(
+                  (a, b) => a.slot_index - b.slot_index,
+                ),
+              )
+              setOutlines((prev) => ({ ...prev, [pose.id]: outline }))
+            },
+            onPoseError: () => {
+              /* per-slot failure: optional UI could aggregate */
+            },
+            onError: (p) => {
+              setIsPending(false)
+              setIsError(true)
+              setError(new Error(p.message))
+            },
+            onDone: ({ count }) => {
+              setIsPending(false)
+              setIsSuccess(count > 0)
+              if (count === 0) setIsError(true)
+            },
+          },
+          ac.signal,
+        )
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') return
+        setIsPending(false)
+        setIsError(true)
+        setError(e instanceof Error ? e : new Error(String(e)))
+      }
     },
-  })
+    [client],
+  )
+
+  return {
+    data: poses,
+    outlines,
+    expectedCount,
+    mutate,
+    isPending,
+    isSuccess,
+    isError,
+    error,
+  }
 }

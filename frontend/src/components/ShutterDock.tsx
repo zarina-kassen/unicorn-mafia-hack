@@ -1,4 +1,4 @@
-import { ImagePlus, Images } from 'lucide-react'
+import { ImagePlus, Images, Sparkles, Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -15,6 +15,9 @@ interface ShutterDockProps {
   onSaveLastAgain: () => void
   /** Opens the pose-gallery sheet. */
   onOpenGallery: () => void
+  onGenerate: () => void
+  hasPoses: boolean
+  galleryBusy: boolean
   className?: string
 }
 
@@ -24,8 +27,13 @@ export function ShutterDock({
   lastCapturePreviewUrl,
   onSaveLastAgain,
   onOpenGallery,
+  onGenerate,
+  hasPoses,
+  galleryBusy,
   className,
 }: ShutterDockProps) {
+  const showGenerateButton = !hasPoses
+
   return (
     <div
       className={cn(
@@ -61,40 +69,65 @@ export function ShutterDock({
           <TooltipContent>Save last capture again</TooltipContent>
         </Tooltip>
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={() => void onShutter()}
-              disabled={!canTakePicture}
-              aria-label={
-                canTakePicture
-                  ? 'Take picture and save to device'
-                  : 'Choose a pose and wait for the outline guide to take a picture'
-              }
-              className="flex size-[76px] shrink-0 cursor-pointer touch-manipulation items-center justify-center rounded-full border-4 border-white/95 bg-black/35 shadow-xl outline-none transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-55"
-            >
-              <span className="size-14 rounded-full bg-white shadow-inner" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>Capture aligned photo</TooltipContent>
-        </Tooltip>
+        {showGenerateButton ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={() => void onGenerate()}
+                disabled={galleryBusy}
+                aria-label="Generate pose recommendations"
+                className="flex size-[76px] shrink-0 cursor-pointer touch-manipulation items-center justify-center rounded-full border-4 border-cam-button-border bg-cam-button-face shadow-xl outline-none transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-55"
+              >
+                {galleryBusy ? (
+                  <Loader2 className="size-8 text-cam-inverse animate-spin" />
+                ) : (
+                  <Sparkles className="size-8 text-cam-inverse" fill="currentColor" />
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Generate pose ideas</TooltipContent>
+          </Tooltip>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={() => void onShutter()}
+                disabled={!canTakePicture}
+                aria-label={
+                  canTakePicture
+                    ? 'Take picture and save to device'
+                    : 'Choose a pose and wait for the outline guide to take a picture'
+                }
+                className="flex size-[76px] shrink-0 cursor-pointer touch-manipulation items-center justify-center rounded-full border-4 border-white/95 bg-black/35 shadow-xl outline-none transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-55"
+              >
+                <span className="size-14 rounded-full bg-white shadow-inner" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Capture aligned photo</TooltipContent>
+          </Tooltip>
+        )}
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              onClick={() => onOpenGallery()}
-              className="size-[52px] shrink-0 overflow-hidden rounded-full border-[2.5px] border-white/90 bg-black/55 p-0 text-white shadow-lg hover:bg-black/65"
-              aria-label="Open pose gallery"
-            >
-              <Images className="size-5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Choose a pose</TooltipContent>
-        </Tooltip>
+        <div className="size-[52px] shrink-0" aria-hidden="true">
+          {!showGenerateButton && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => onOpenGallery()}
+                  className="size-full overflow-hidden rounded-full border-[2.5px] border-white/90 bg-black/55 p-0 text-white shadow-lg hover:bg-black/65"
+                  aria-label="Open pose gallery"
+                >
+                  <Images className="size-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Choose a pose</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
       </div>
     </div>
   )

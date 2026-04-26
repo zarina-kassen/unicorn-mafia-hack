@@ -28,12 +28,6 @@ class Settings(BaseSettings):
         description="OpenRouter base URL",
     )
 
-    # OpenAI Configuration
-    openai_api_key: str = Field(
-        default="",
-        description="OpenAI API key",
-    )
-
     # Mubit (required for memory routes; validated at startup)
     mubit_api_key: str = Field(
         default="",
@@ -64,19 +58,24 @@ class Settings(BaseSettings):
         ),
         validation_alias=AliasChoices("FAST_IMAGE_MODEL", "IMAGE_MODEL"),
     )
-    mask_model: str = Field(
+    heavy_image_model: str = Field(
         default="black-forest-labs/flux.2-klein-4b",
+        description=("High-quality FLUX image model for final captures on OpenRouter."),
+    )
+    mask_model: str = Field(
+        default="",
         description=(
             "Image model for person-segmentation masks (OpenRouter). "
-            "Defaults to FAST_IMAGE_MODEL; override with MASK_MODEL."
+            "Defaults to FAST_IMAGE_MODEL if empty."
         ),
         validation_alias=AliasChoices("MASK_MODEL"),
     )
     pose_guide_model: str = Field(
-        default="openai/gpt-4o-mini",
+        default="",
         description=(
             "Vision LLM for silhouette JSON (image in, strict JSON Schema out). "
-            "Cannot be FLUX — pick any OpenRouter vision+JSON-capable chat model."
+            "Cannot be FLUX — pick any OpenRouter vision+JSON-capable chat model. "
+            "Defaults to AGENT_MODEL if empty."
         ),
     )
     agent_max_tokens: int = Field(
@@ -175,6 +174,16 @@ class Settings(BaseSettings):
         return [
             p.strip() for p in self.clerk_authorized_parties.split(",") if p.strip()
         ]
+
+    @property
+    def resolved_mask_model(self) -> str:
+        """Resolve mask model to FAST_IMAGE_MODEL if empty."""
+        return self.mask_model or self.fast_image_model
+
+    @property
+    def resolved_pose_guide_model(self) -> str:
+        """Resolve pose guide model to AGENT_MODEL if empty."""
+        return self.pose_guide_model or self.agent_model
 
 
 # Global settings instance

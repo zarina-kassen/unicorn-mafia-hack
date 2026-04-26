@@ -194,7 +194,7 @@ def test_pose_variants_sse_stream(monkeypatch: pytest.MonkeyPatch) -> None:
                 id="chatcmpl-outline",
                 object="chat.completion",
                 created=0,
-                model=settings.pose_guide_model,
+                model=settings.resolved_pose_guide_model,
                 choices=[
                     components.ChatChoice(
                         finish_reason="stop",

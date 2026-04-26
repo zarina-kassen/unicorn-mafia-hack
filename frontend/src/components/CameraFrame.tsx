@@ -8,6 +8,8 @@ interface CameraFrameProps {
   overlay?: ReactNode
   shutterFlashActive: boolean
   onShutterFlashEnd: () => void
+  generateFlashActive: boolean
+  onGenerateFlashEnd: () => void
   className?: string
 }
 
@@ -16,6 +18,8 @@ export function CameraFrame({
   overlay,
   shutterFlashActive,
   onShutterFlashEnd,
+  generateFlashActive,
+  onGenerateFlashEnd,
   className,
 }: CameraFrameProps) {
   return (
@@ -54,6 +58,16 @@ export function CameraFrame({
         aria-hidden
         onAnimationEnd={(e) => {
           if (e.target === e.currentTarget) onShutterFlashEnd()
+        }}
+      />
+      <div
+        className={cn(
+          'pointer-events-none absolute inset-0 z-9 opacity-0',
+          generateFlashActive && 'cam-generate-flash-active',
+        )}
+        aria-hidden
+        onAnimationEnd={(e) => {
+          if (e.target === e.currentTarget) onGenerateFlashEnd()
         }}
       />
     </div>

@@ -62,6 +62,7 @@ export function CameraScreen() {
 
   const [mobileGalleryOpen, setMobileGalleryOpen] = useState(false)
   const [shutterFlashActive, setShutterFlashActive] = useState(false)
+  const [generateFlashActive, setGenerateFlashActive] = useState(false)
   const [sessionCaptures, setSessionCaptures] = useState<SessionCapture[]>([])
   const sessionCapturesRef = useRef<SessionCapture[]>([])
 
@@ -106,6 +107,12 @@ export function CameraScreen() {
   const handleGenerate = useCallback(() => {
     if (cameraState.status !== 'ready' || !videoRef.current || galleryBusy)
       return
+    if (
+      typeof window !== 'undefined' &&
+      !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
+      setGenerateFlashActive(true)
+    }
     setSelectedId(null)
     if (!isMdUp) setMobileGalleryOpen(true)
     poseVariants.mutate(videoRef.current)
@@ -263,6 +270,8 @@ export function CameraScreen() {
             videoRef={videoRef}
             shutterFlashActive={shutterFlashActive}
             onShutterFlashEnd={() => setShutterFlashActive(false)}
+            generateFlashActive={generateFlashActive}
+            onGenerateFlashEnd={() => setGenerateFlashActive(false)}
             overlay={
               cameraState.status === 'ready' && selectedPose ? (
                 <PoseOverlay

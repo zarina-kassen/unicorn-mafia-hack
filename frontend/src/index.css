@@ -283,6 +283,30 @@
   animation: cam-shutter-flash 0.16s ease-out forwards;
 }
 
+@keyframes cam-generate-flash {
+  0% {
+    opacity: 0;
+    transform: translateY(-20%);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.03)),
+      linear-gradient(135deg, rgba(242, 221, 174, 0.2), transparent 52%);
+  }
+  38% {
+    opacity: 0.42;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(18%);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0)),
+      linear-gradient(135deg, rgba(242, 221, 174, 0.1), transparent 56%);
+  }
+}
+
+.cam-generate-flash-active {
+  animation: cam-generate-flash 0.34s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
 @keyframes skeleton-sweep {
   from {
     transform: translateX(-70%);
@@ -301,6 +325,11 @@
 
 @media (prefers-reduced-motion: reduce) {
   .cam-shutter-flash-active {
+    animation: none;
+    opacity: 0;
+  }
+
+  .cam-generate-flash-active {
     animation: none;
     opacity: 0;
   }

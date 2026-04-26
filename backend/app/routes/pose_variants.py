@@ -294,11 +294,7 @@ async def _generate_and_store_image(
         if image_url is None:
             return None
     except PaymentRequiredResponseError:
-        logger.warning(
-            "Image generation failed for slot %d: OpenRouter credits exhausted",
-            slot_index,
-        )
-        return None
+        raise
     except Exception as exc:
         logger.exception("Image generation failed for slot %d: %s", slot_index, exc)
         return None
@@ -477,6 +473,8 @@ async def _generate_variant_with_outline(
         data_url, w, h = loaded
         try:
             outline = await _extract_pose_outline_from_data_url(data_url, w, h, client)
+        except PaymentRequiredResponseError:
+            raise
         except Exception as exc:
             logger.exception("Outline failed for slot %d", slot_index)
             return (
@@ -485,6 +483,15 @@ async def _generate_variant_with_outline(
             )
         item = PoseStreamItem(pose=variant, outline=outline)
         return ("pose", item.model_dump(mode="json"))
+    except PaymentRequiredResponseError:
+        logger.warning("Slot %d: OpenRouter credits exhausted", slot_index)
+        return (
+            "credits_exhausted",
+            {
+                "slot_index": slot_index,
+                "message": "OpenRouter credits exhausted — add credits at https://openrouter.ai/settings/credits",
+            },
+        )
     except Exception as exc:
         logger.exception("Slot %d failed", slot_index)
         return (
@@ -581,14 +588,24 @@ async def create_pose_variants(
         ]
         tasks = early_tasks + late_tasks
         success_count = 0
+        credits_exhausted = False
         for finished in asyncio.as_completed(tasks):
             event_name, payload = await finished
             yield _sse_frame(event_name, payload)
             if event_name == "pose":
                 success_count += 1
+            elif event_name == "credits_exhausted":
+                credits_exhausted = True
             # Tiny yield so intermediaries can flush SSE without adding much latency.
             await asyncio.sleep(0.004)
-        if success_count == 0:
+        if credits_exhausted and success_count == 0:
+            yield _sse_frame(
+                "error",
+                {
+                    "message": "OpenRouter credits exhausted — add credits at https://openrouter.ai/settings/credits",
+                },
+            )
+        elif success_count == 0:
             yield _sse_frame("error", {"message": "Image generation failed"})
         yield _sse_frame("done", {"count": success_count})
 

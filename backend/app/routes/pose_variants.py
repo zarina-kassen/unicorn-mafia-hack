@@ -14,7 +14,7 @@ from urllib.parse import unquote, urlsplit
 from uuid import uuid4
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from openrouter import OpenRouter, components
 from openrouter.types import UNSET
@@ -23,6 +23,7 @@ from pydantic_ai import Agent
 
 from ..agents import PoseAgentDeps as AgentDeps, get_pose_generation_agent
 from ..auth.clerk import require_auth
+from ..billing import CONFIG, check_rate_limit, get_account_state, spend_credits
 from ..config import settings
 from ..dependencies import get_openrouter_client
 from ..image_resize import downscale_to_jpeg
@@ -39,6 +40,38 @@ from ..storage.database import get_image, store_image
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/pose-variants", tags=["pose-variants"])
+
+
+def _client_ip(request: Request) -> str:
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _enforce_pose_job_limits(user_id: str, request: Request) -> None:
+    """Rate-limit pose variant generation per user/IP/globally."""
+    account = get_account_state(user_id)
+    per_day_limit = (
+        CONFIG.pose_jobs_per_day_paid
+        if account["plan_type"] != "free"
+        else CONFIG.pose_jobs_per_day_free
+    )
+    check_rate_limit(
+        f"pose:user:{user_id}",
+        max_count=per_day_limit,
+        window_seconds=24 * 60 * 60,
+    )
+    check_rate_limit(
+        f"pose:ip:{_client_ip(request)}",
+        max_count=max(per_day_limit * 2, 10),
+        window_seconds=24 * 60 * 60,
+    )
+    check_rate_limit(
+        "pose:global:hour",
+        max_count=CONFIG.max_pose_jobs_per_hour_global,
+        window_seconds=60 * 60,
+    )
+
 
 POSE_VARIANT_TOTAL = 6
 POSE_VARIANT_TEMPLATE_SLOTS = 2
@@ -480,8 +513,9 @@ async def _generate_variant_with_outline(
 
 @router.post("")
 async def create_pose_variants(
+    request: Request,
     reference_image: UploadFile = File(...),
-    _user_id: str = Depends(require_auth),
+    user_id: str = Depends(require_auth),
     agent: Agent[AgentDeps, list[PoseTargetSpec]] = Depends(get_pose_generation_agent),
     client: OpenRouter = Depends(get_openrouter_client),
 ) -> StreamingResponse:
@@ -489,6 +523,13 @@ async def create_pose_variants(
     mime = reference_image.content_type or ""
     if not mime.startswith("image/"):
         raise HTTPException(status_code=400, detail="Only image files are allowed")
+
+    _enforce_pose_job_limits(user_id, request)
+    spend_credits(
+        user_id,
+        amount=CONFIG.pose_variant_cost,
+        event_type="pose_variant_job",
+    )
 
     image_bytes = await reference_image.read()
     image_bytes, mime = downscale_to_jpeg(

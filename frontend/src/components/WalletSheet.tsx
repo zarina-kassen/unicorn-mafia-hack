@@ -7,8 +7,8 @@ import {
   CREDIT_PACKS,
   getBillingAccount,
   type BillingAccount,
-  type GetToken,
-} from '@/backend/client'
+} from '@/api/billing'
+import type { GetToken } from '@/api/base'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -17,12 +17,11 @@ const checkoutLoadingId = (id: string) => `wallet-checkout-${id}`
 export interface WalletSheetProps {
   open: boolean
   onClose: () => void
-  baseUrl: string
   getToken: GetToken
   onBalanceUpdated?: () => void
 }
 
-export function WalletSheet({ open, onClose, baseUrl, getToken, onBalanceUpdated }: WalletSheetProps) {
+export function WalletSheet({ open, onClose, getToken, onBalanceUpdated }: WalletSheetProps) {
   const { isSignedIn } = useAuth()
   const [account, setAccount] = useState<BillingAccount | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -36,14 +35,14 @@ export function WalletSheet({ open, onClose, baseUrl, getToken, onBalanceUpdated
     }
     setLoadError(null)
     try {
-      const next = await getBillingAccount(baseUrl, getToken)
+      const next = await getBillingAccount(getToken)
       setAccount(next)
       onBalanceUpdated?.()
     } catch (err) {
       setAccount(null)
       setLoadError(err instanceof Error ? err.message : 'Could not load balance.')
     }
-  }, [baseUrl, getToken, isSignedIn, onBalanceUpdated])
+  }, [getToken, isSignedIn, onBalanceUpdated])
 
   useEffect(() => {
     if (!open) return
@@ -62,7 +61,6 @@ export function WalletSheet({ open, onClose, baseUrl, getToken, onBalanceUpdated
         const returnUrl = typeof window !== 'undefined' ? window.location.href.split('?')[0] : ''
         const session = await createCheckoutSession(
           { pack_id: packId, success_url: returnUrl, cancel_url: returnUrl },
-          baseUrl,
           getToken,
         )
         window.location.href = session.checkout_url
@@ -74,7 +72,7 @@ export function WalletSheet({ open, onClose, baseUrl, getToken, onBalanceUpdated
         setCheckoutLoading(null)
       }
     },
-    [baseUrl, getToken, isSignedIn],
+    [getToken, isSignedIn],
   )
 
   if (!open) return null

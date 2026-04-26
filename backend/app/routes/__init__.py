@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .billing import router as billing_router
 from .health import router as health_router
 from .images import router as images_router
 from .memory import router as memory_router
@@ -9,6 +10,7 @@ from .pose_mask import router as pose_mask_router
 from .pose_variants import router as pose_variants_router
 
 __all__ = [
+    "billing_router",
     "health_router",
     "images_router",
     "memory_router",

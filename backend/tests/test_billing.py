@@ -9,9 +9,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import billing
-from app.auth import require_auth
-from app import main as main_module
+from app.auth.clerk import require_auth
 from app.main import app
+from app.routes import pose_variants as pose_variants_module
 
 
 @pytest.fixture(autouse=True)
@@ -34,9 +34,7 @@ def test_billing_account_endpoint() -> None:
 def test_insufficient_credits_for_pose_generation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(main_module, "check_rate_limit", lambda *a, **k: None)
-    monkeypatch.setattr(main_module, "count_active_pose_jobs", lambda: 0)
-    monkeypatch.setattr(main_module, "count_user_active_pose_jobs", lambda _uid: 0)
+    monkeypatch.setattr(pose_variants_module, "check_rate_limit", lambda *a, **k: None)
     account = billing.get_account_state("test-user-id")
     if account["balance"] > 0:
         billing.spend_credits(

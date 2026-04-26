@@ -35,14 +35,14 @@ Endpoints:
 
 The pose-target agent uses [Pydantic AI](https://ai.pydantic.dev/) with
 structured output, calling OpenRouter’s OpenAI-compatible API (`OPENROUTER_API_KEY`).
-Default `AGENT_MODEL` is `openai/gpt-5.4-mini`. Override it in `.env` for any other
-OpenRouter-supported chat model.
+Default `AGENT_MODEL` is `meta-llama/llama-3.3-70b-instruct` (text pose planner — not FLUX). Portraits use
+`FAST_IMAGE_MODEL` (FLUX). Override in `.env` for any OpenRouter chat model.
 
 ## Pose Variant Generation (SSE)
 
 One request runs the full pipeline: **pose targets** (Pydantic AI) → **N parallel** OpenRouter
-image generations (`IMAGE_MODEL`) → for each stored image, a **vision** outline (`POSE_GUIDE_MODEL`,
-default `google/gemini-3.1-pro-preview`) with JSON Schema structured output (16–28 normalized
+image generations (`FAST_IMAGE_MODEL`, FLUX on OpenRouter) → for each stored image, a **vision** outline (`POSE_GUIDE_MODEL`,
+default `openai/gpt-4o-mini`) with JSON Schema structured output (16–28 normalized
 `{x,y}` vertices). Each completed item is pushed on the stream as a `pose` event
 (`{ "pose": PoseVariantResult, "outline": PoseOutlineResponse }`).
 
@@ -51,8 +51,8 @@ Useful environment overrides:
 ```bash
 OPENROUTER_API_KEY=...
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-IMAGE_MODEL=black-forest-labs/flux.2-pro
-POSE_GUIDE_MODEL=google/gemini-3.1-pro-preview
+FAST_IMAGE_MODEL=black-forest-labs/flux.2-klein-4b
+POSE_GUIDE_MODEL=openai/gpt-4o-mini
 POSE_GUIDE_MAX_TOKENS=2048
 AGENT_MAX_TOKENS=8192
 GENERATED_TTL_SECONDS=21600

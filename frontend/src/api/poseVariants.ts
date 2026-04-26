@@ -34,7 +34,13 @@ export interface PoseStreamPosePayload {
   outline: PoseOutlineResponse
 }
 
+export interface PoseStreamPhasePayload {
+  step: string
+  count?: number
+}
+
 export interface PoseStreamHandlers {
+  onPhase?: (payload: PoseStreamPhasePayload) => void
   onTargetCount?: (count: number) => void
   onPose?: (payload: PoseStreamPosePayload) => void
   onPoseError?: (payload: { slot_index: number; message: string }) => void
@@ -65,6 +71,9 @@ function parseCompleteSseMessages(buffer: string): { events: Array<{ event: stri
 function dispatchSseEvent(event: string, data: string, handlers: PoseStreamHandlers): void {
   const payload = JSON.parse(data) as unknown
   switch (event) {
+    case 'phase':
+      handlers.onPhase?.(payload as PoseStreamPhasePayload)
+      break
     case 'target_count':
       handlers.onTargetCount?.((payload as { count: number }).count)
       break
@@ -82,6 +91,35 @@ function dispatchSseEvent(event: string, data: string, handlers: PoseStreamHandl
       break
     default:
       break
+  }
+}
+
+/** Events that should paint before the next SSE message (avoids one paint when many arrive in one chunk). */
+const SSE_EVENTS_NEEDING_FRAME = new Set([
+  'phase',
+  'target_count',
+  'pose',
+  'pose_error',
+])
+
+function yieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => resolve())
+    } else {
+      queueMicrotask(resolve)
+    }
+  })
+}
+
+async function dispatchSseEventForStream(
+  event: string,
+  data: string,
+  handlers: PoseStreamHandlers,
+): Promise<void> {
+  dispatchSseEvent(event, data, handlers)
+  if (SSE_EVENTS_NEEDING_FRAME.has(event)) {
+    await yieldToBrowser()
   }
 }
 
@@ -104,7 +142,10 @@ export async function streamPoseVariants(
   const res = await fetch(url, {
     method: 'POST',
     body: form,
-    headers,
+    headers: {
+      ...headers,
+      Accept: 'text/event-stream',
+    },
     signal: options.signal,
   })
 
@@ -125,7 +166,7 @@ export async function streamPoseVariants(
     const { events, rest } = parseCompleteSseMessages(buf)
     buf = rest
     for (const { event, data } of events) {
-      dispatchSseEvent(event, data, options.handlers)
+      await dispatchSseEventForStream(event, data, options.handlers)
     }
   }
   buf += decoder.decode()
@@ -133,7 +174,7 @@ export async function streamPoseVariants(
     const tail = buf.endsWith('\n\n') ? buf : `${buf}\n\n`
     const { events } = parseCompleteSseMessages(tail)
     for (const { event, data } of events) {
-      dispatchSseEvent(event, data, options.handlers)
+      await dispatchSseEventForStream(event, data, options.handlers)
     }
   }
 }

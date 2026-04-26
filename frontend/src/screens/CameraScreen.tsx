@@ -91,7 +91,15 @@ export function CameraScreen() {
   const lastSessionCapture = sessionCaptures[0] ?? null
 
   const bottomHintPrimary = useMemo(() => {
-    if (galleryBusy) return 'Hang tight while new poses are generated.'
+    if (galleryBusy) {
+      if (poseVariants.streamPhase === 'planning') {
+        return 'Choosing pose ideas for you…'
+      }
+      if (poseVariants.streamPhase === 'generating') {
+        return 'Rendering pose photos as they finish…'
+      }
+      return 'Hang tight while new poses are generated.'
+    }
     if (selectedPose) {
       if (outlineReadyForSelected) {
         return `${selectedPose.instruction} Tap the shutter when you are aligned to save a photo.`
@@ -102,7 +110,13 @@ export function CameraScreen() {
       return 'Choose a pose in the gallery to show its outline guide.'
     }
     return 'Generate poses, then pick one to match.'
-  }, [galleryBusy, selectedPose, outlineReadyForSelected, poses.length])
+  }, [
+    galleryBusy,
+    poseVariants.streamPhase,
+    selectedPose,
+    outlineReadyForSelected,
+    poses.length,
+  ])
 
   const handleGenerate = useCallback(() => {
     if (cameraState.status !== 'ready' || !videoRef.current || galleryBusy)

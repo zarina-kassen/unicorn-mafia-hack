@@ -1,5 +1,6 @@
 import { useAuth } from '@clerk/react'
 import { useCallback, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import {
   PoseVariantsClient,
   type PoseOutlineResponse,
@@ -58,6 +59,8 @@ export function usePoseVariants() {
   const [variants, setVariants] = useState<PoseVariantResult[]>([])
   const [outlines, setOutlines] = useState<Record<string, PoseOutlineResponse>>({})
   const [expectedCount, setExpectedCount] = useState(0)
+  /** Server SSE phase: planning (LLM targets) vs generating (parallel images). */
+  const [streamPhase, setStreamPhase] = useState<string | null>(null)
   const [isPending, setIsPending] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
   const [isError, setIsError] = useState(false)
@@ -83,31 +86,41 @@ export function usePoseVariants() {
       setVariants([])
       setOutlines({})
       setExpectedCount(0)
+      setStreamPhase(null)
 
       try {
         const frame = await captureFrame(videoEl)
         await client.stream(
           frame,
           {
-            onTargetCount: (count) => setExpectedCount(count),
+            onPhase: (p) => {
+              flushSync(() => setStreamPhase(p.step))
+            },
+            onTargetCount: (count) => {
+              flushSync(() => setExpectedCount(count))
+            },
             onPose: ({ pose, outline }) => {
-              setVariants((prev) =>
-                [...prev.filter((p) => p.id !== pose.id), pose].sort(
-                  (a, b) => a.slot_index - b.slot_index,
-                ),
-              )
-              setOutlines((prev) => ({ ...prev, [pose.id]: outline }))
+              flushSync(() => {
+                setVariants((prev) =>
+                  [...prev.filter((p) => p.id !== pose.id), pose].sort(
+                    (a, b) => a.slot_index - b.slot_index,
+                  ),
+                )
+                setOutlines((prev) => ({ ...prev, [pose.id]: outline }))
+              })
             },
             onPoseError: () => {
               /* per-slot failure: optional UI could aggregate */
             },
             onError: (p) => {
               setIsPending(false)
+              setStreamPhase(null)
               setIsError(true)
               setError(new Error(p.message))
             },
             onDone: ({ count }) => {
               setIsPending(false)
+              setStreamPhase(null)
               setIsSuccess(count > 0)
               if (count === 0) setIsError(true)
             },
@@ -117,6 +130,7 @@ export function usePoseVariants() {
       } catch (e) {
         if ((e as Error).name === 'AbortError') return
         setIsPending(false)
+        setStreamPhase(null)
         setIsError(true)
         setError(e instanceof Error ? e : new Error(String(e)))
       }
@@ -128,6 +142,7 @@ export function usePoseVariants() {
     data: poses,
     outlines,
     expectedCount,
+    streamPhase,
     mutate,
     isPending,
     isSuccess,

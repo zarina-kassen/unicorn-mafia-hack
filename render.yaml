@@ -13,7 +13,7 @@ services:
       - key: MUBIT_API_KEY
         sync: false
       - key: AGENT_MODEL
-        value: openai/gpt-5.4-mini
+        value: meta-llama/llama-3.3-70b-instruct
       - key: CLERK_SECRET_KEY
         sync: false
       - key: CLERK_AUTHORIZED_PARTIES
@@ -25,11 +25,11 @@ services:
           name: frame-mog-db
           property: connectionString
       - key: FAST_IMAGE_MODEL
-        value: black-forest-labs/flux-schnell
+        value: black-forest-labs/flux.2-klein-4b
       - key: HQ_IMAGE_MODEL
-        value: openai/gpt-image-1
+        value: black-forest-labs/flux.2-pro
       - key: POSE_GUIDE_MODEL
-        value: google/gemini-3.1-pro-preview
+        value: openai/gpt-4o-mini
       - key: POSE_GUIDE_MAX_TOKENS
         value: "2048"
       - key: AGENT_MAX_TOKENS

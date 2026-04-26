@@ -36,6 +36,7 @@ def get_pose_generation_agent() -> Agent[PoseAgentDeps, list[PoseTargetSpec]]:
     os.environ["OPENAI_API_KEY"] = settings.openrouter_api_key
     os.environ["OPENAI_BASE_URL"] = settings.openrouter_base_url
 
+    # OpenAI-compatible client → OpenRouter; model slug is any OpenRouter id (not necessarily openai/*).
     model = OpenAIChatModel(settings.agent_model, provider="openai")
     model_settings: ModelSettings = {"max_tokens": settings.agent_max_tokens}
     return Agent[PoseAgentDeps, list[PoseTargetSpec]](

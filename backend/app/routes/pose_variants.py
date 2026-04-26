@@ -205,7 +205,7 @@ async def _generate_and_store_image(
 
     try:
         response = await client.chat.send_async(
-            model=settings.image_model,
+            model=settings.fast_image_model,
             messages=[
                 _user_vision_message(
                     text=prompt, image_data_url=reference_image_data_url
@@ -242,7 +242,7 @@ async def _generate_and_store_image(
         target_landmarks=target.approximate_landmarks,
         replaceable=True,
         tier="standard",
-        model=settings.image_model,
+        model=settings.fast_image_model,
     )
 
 
@@ -431,18 +431,22 @@ async def create_pose_variants(
         f"data:{mime};base64,{base64.b64encode(image_bytes).decode('ascii')}"
     )
 
-    deps = AgentDeps()
-    target_specs_result = await agent.run(
-        f"Generate {POSE_VARIANT_TOTAL} pose targets for the reference image. "
-        f"Reference image: {reference_image_data_url[:100]}...",
-        deps=deps,
-    )
-    target_specs = target_specs_result.output
-    n = len(target_specs)
-    job_id = uuid4().hex[:8]
-
     async def event_stream() -> AsyncIterator[str]:
+        # Open the stream immediately so clients/proxies see bytes before slow work.
+        # (SSE comment — no `data:` line; parsers that only care about events ignore it.)
+        yield ": sse-open\n\n"
+        yield _sse_frame("phase", {"step": "planning"})
+        deps = AgentDeps()
+        target_specs_result = await agent.run(
+            f"Generate {POSE_VARIANT_TOTAL} pose targets for the reference image. "
+            f"Reference image: {reference_image_data_url[:100]}...",
+            deps=deps,
+        )
+        target_specs = target_specs_result.output
+        n = len(target_specs)
+        job_id = uuid4().hex[:8]
         yield _sse_frame("target_count", {"count": n})
+        yield _sse_frame("phase", {"step": "generating", "count": n})
         tasks = [
             asyncio.create_task(
                 _generate_variant_with_outline(
@@ -461,15 +465,17 @@ async def create_pose_variants(
             yield _sse_frame(event_name, payload)
             if event_name == "pose":
                 success_count += 1
+            # Small gap helps intermediaries flush chunked SSE (dev proxy, some tunnels).
+            await asyncio.sleep(0.012)
         if success_count == 0:
             yield _sse_frame("error", {"message": "Image generation failed"})
         yield _sse_frame("done", {"count": success_count})
 
     return StreamingResponse(
         event_stream(),
-        media_type="text/event-stream",
+        media_type="text/event-stream; charset=utf-8",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },

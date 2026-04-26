@@ -207,6 +207,9 @@ def test_pose_variants_sse_stream(monkeypatch: pytest.MonkeyPatch) -> None:
 
     events = _parse_sse(raw)
     types = [e[0] for e in events]
+    assert ": sse-open" in raw
+    assert types[0] == "phase"
+    assert events[0][1]["step"] == "planning"
     assert "target_count" in types
     assert types.count("pose") == 2
     assert "done" in types

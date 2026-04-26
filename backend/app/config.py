@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -50,19 +50,25 @@ class Settings(BaseSettings):
 
     # AI Model Configuration
     agent_model: str = Field(
-        default="openai/gpt-5.4-mini",
-        description="Model for pose generation agent (OpenRouter slug)",
+        default="meta-llama/llama-3.3-70b-instruct",
+        description=(
+            "Text/structured pose-target planner (OpenRouter chat model). "
+            "Cannot be FLUX — FLUX only generates pixels (see FAST_IMAGE_MODEL)."
+        ),
     )
-    image_model: str = Field(
-        default="black-forest-labs/flux.2-pro",
-        description="Image generation model",
+    fast_image_model: str = Field(
+        default="black-forest-labs/flux.2-klein-4b",
+        description=(
+            "Fast FLUX image model for pose variants on OpenRouter "
+            "(env FAST_IMAGE_MODEL; legacy IMAGE_MODEL also accepted)."
+        ),
+        validation_alias=AliasChoices("FAST_IMAGE_MODEL", "IMAGE_MODEL"),
     )
     pose_guide_model: str = Field(
-        default="google/gemini-3.1-pro-preview",
+        default="openai/gpt-4o-mini",
         description=(
-            "Vision LLM that returns a loose hand-drawn-style silhouette polygon "
-            "(normalized x,y vertices) for a generated pose image. Must support "
-            "image input and JSON Schema structured outputs on OpenRouter."
+            "Vision LLM for silhouette JSON (image in, strict JSON Schema out). "
+            "Cannot be FLUX — pick any OpenRouter vision+JSON-capable chat model."
         ),
     )
     agent_max_tokens: int = Field(

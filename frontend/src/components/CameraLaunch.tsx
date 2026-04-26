@@ -85,7 +85,12 @@ export function CameraLaunch({
                 type="button"
                 size="lg"
                 variant="outline"
-                className="h-auto rounded-full border-cam-active-border bg-cam-button-face px-6 py-3.5 font-black text-cam-inverse shadow-cam-launch-btn hover:bg-cam-button-face/90 hover:text-cam-inverse"
+                className={cn(
+                  'h-auto rounded-full border-cam-active-border px-6 py-3.5 font-black shadow-cam-launch-btn',
+                  /* outline + dark: use bg-input/30 — force solid white CTA */
+                  '!bg-white !text-cam-inverse hover:!bg-white/92 hover:!text-cam-inverse',
+                  'dark:!bg-white dark:!text-cam-inverse dark:hover:!bg-white/92',
+                )}
                 onClick={() => void onRequestCamera()}
               >
                 {cameraState.status === 'idle' ? 'Enable camera' : 'Retry camera'}

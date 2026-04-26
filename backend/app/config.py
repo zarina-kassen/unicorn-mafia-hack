@@ -59,7 +59,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("FAST_IMAGE_MODEL", "IMAGE_MODEL"),
     )
     heavy_image_model: str = Field(
-        default="black-forest-labs/flux.2",
+        default="black-forest-labs/flux.2-pro",
         description=("High-quality FLUX image model for final captures on OpenRouter."),
     )
     mask_model: str = Field(

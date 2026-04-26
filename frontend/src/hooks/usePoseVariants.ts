@@ -12,6 +12,7 @@ export interface GalleryPose {
   id: string
   title: string
   imageSrc: string
+  instruction: string
 }
 
 function assetUrl(path: string): string {
@@ -20,7 +21,12 @@ function assetUrl(path: string): string {
 }
 
 function toGalleryPose(r: PoseVariantResult): GalleryPose {
-  return { id: r.id, title: r.title, imageSrc: assetUrl(r.image_url) }
+  return {
+    id: r.id,
+    title: r.title,
+    imageSrc: assetUrl(r.image_url),
+    instruction: r.instruction,
+  }
 }
 
 function captureFrame(video: HTMLVideoElement): Promise<Blob> {

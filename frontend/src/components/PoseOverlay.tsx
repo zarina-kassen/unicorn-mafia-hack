@@ -1,4 +1,11 @@
-import { useEffect, useRef } from 'react'
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useRef,
+  type MutableRefObject,
+  type Ref,
+} from 'react'
 import type { PoseOutlineResponse } from '../api/poseVariants'
 
 interface PoseOverlayProps {
@@ -123,12 +130,26 @@ function drawOutlineSilhouette(
   ctx.restore()
 }
 
-export function PoseOverlay({
-  videoRef,
-  outline = null,
-  paused = false,
-}: PoseOverlayProps) {
+function assignCanvasRef(
+  node: HTMLCanvasElement | null,
+  inner: MutableRefObject<HTMLCanvasElement | null>,
+  outer: Ref<HTMLCanvasElement> | undefined,
+): void {
+  inner.current = node
+  if (outer == null) return
+  if (typeof outer === 'function') outer(node)
+  else (outer as MutableRefObject<HTMLCanvasElement | null>).current = node
+}
+
+export const PoseOverlay = forwardRef<HTMLCanvasElement, PoseOverlayProps>(function PoseOverlay(
+  { videoRef, outline = null, paused = false },
+  ref,
+) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const setCanvasRef = useCallback(
+    (node: HTMLCanvasElement | null) => assignCanvasRef(node, canvasRef, ref),
+    [ref],
+  )
   const preparedRef = useRef<PreparedOutline | null>(null)
 
   useEffect(() => {
@@ -179,5 +200,5 @@ export function PoseOverlay({
     }
   }, [videoRef, paused])
 
-  return <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none" />
-}
+  return <canvas ref={setCanvasRef} className="absolute inset-0 pointer-events-none" />
+})

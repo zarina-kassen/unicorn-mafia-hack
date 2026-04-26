@@ -98,7 +98,7 @@ async def extract_pose_mask(
 
     try:
         response = await client.chat.send_async(
-            model=settings.mask_model,
+            model=settings.resolved_mask_model,
             messages=[_user_vision_message(text=_MASK_PROMPT, image_data_url=data_url)],
             modalities=["image"],
             image_config={

@@ -26,9 +26,8 @@ export function CameraFrame({
     <div
       className={cn(
         'relative isolate overflow-hidden bg-cam-surface',
-        'h-full min-h-0 w-full md:h-auto',
-        'md:mx-auto md:aspect-[9/16] md:max-h-[min(82dvh,860px)] md:w-full md:max-w-[min(420px,42vw)]',
-        'md:rounded-3xl md:border md:border-cam-hairline md:shadow-cam-preview',
+        /* Camera always fills the viewport at every breakpoint. */
+        'h-full min-h-0 w-full',
         className,
       )}
     >

@@ -28,12 +28,6 @@ class Settings(BaseSettings):
         description="OpenRouter base URL",
     )
 
-    # OpenAI Configuration
-    openai_api_key: str = Field(
-        default="",
-        description="OpenAI API key",
-    )
-
     # Mubit (required for memory routes; validated at startup)
     mubit_api_key: str = Field(
         default="",
@@ -50,33 +44,38 @@ class Settings(BaseSettings):
 
     # AI Model Configuration
     agent_model: str = Field(
-        default="meta-llama/llama-3.3-70b-instruct",
+        default="openai/gpt-5.4-mini",
         description=(
             "Text/structured pose-target planner (OpenRouter chat model). "
             "Cannot be FLUX — FLUX only generates pixels (see FAST_IMAGE_MODEL)."
         ),
     )
     fast_image_model: str = Field(
-        default="black-forest-labs/flux.2-klein-4b",
+        default="black-forest-labs/flux.2-flex",
         description=(
             "Fast FLUX image model for pose variants on OpenRouter "
             "(env FAST_IMAGE_MODEL; legacy IMAGE_MODEL also accepted)."
         ),
         validation_alias=AliasChoices("FAST_IMAGE_MODEL", "IMAGE_MODEL"),
     )
+    heavy_image_model: str = Field(
+        default="black-forest-labs/flux.2-pro",
+        description=("High-quality FLUX image model for final captures on OpenRouter."),
+    )
     mask_model: str = Field(
-        default="black-forest-labs/flux.2-klein-4b",
+        default="",
         description=(
             "Image model for person-segmentation masks (OpenRouter). "
-            "Defaults to FAST_IMAGE_MODEL; override with MASK_MODEL."
+            "Defaults to FAST_IMAGE_MODEL if empty."
         ),
         validation_alias=AliasChoices("MASK_MODEL"),
     )
     pose_guide_model: str = Field(
-        default="openai/gpt-4o-mini",
+        default="",
         description=(
             "Vision LLM for silhouette JSON (image in, strict JSON Schema out). "
-            "Cannot be FLUX — pick any OpenRouter vision+JSON-capable chat model."
+            "Cannot be FLUX — pick any OpenRouter vision+JSON-capable chat model. "
+            "Defaults to AGENT_MODEL if empty."
         ),
     )
     onboarding_vision_model: str = Field(
@@ -182,6 +181,16 @@ class Settings(BaseSettings):
         return [
             p.strip() for p in self.clerk_authorized_parties.split(",") if p.strip()
         ]
+
+    @property
+    def resolved_mask_model(self) -> str:
+        """Resolve mask model to FAST_IMAGE_MODEL if empty."""
+        return self.mask_model or self.fast_image_model
+
+    @property
+    def resolved_pose_guide_model(self) -> str:
+        """Resolve pose guide model to AGENT_MODEL if empty."""
+        return self.pose_guide_model or self.agent_model
 
 
 # Global settings instance

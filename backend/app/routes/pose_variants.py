@@ -402,7 +402,7 @@ async def _extract_pose_outline_from_data_url(
 ) -> PoseOutlineResponse:
     vision_url = _downscale_data_url_for_vision(data_url)
     response = await client.chat.send_async(
-        model=settings.pose_guide_model,
+        model=settings.resolved_pose_guide_model,
         messages=[
             _user_vision_message(text=_outline_prompt_text(), image_data_url=vision_url)
         ],
@@ -429,7 +429,7 @@ async def _extract_pose_outline_from_data_url(
         width=width,
         height=height,
         source="openrouter-pose-outline",
-        model=settings.pose_guide_model,
+        model=settings.resolved_pose_guide_model,
     )
 
 

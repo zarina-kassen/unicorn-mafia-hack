@@ -11,13 +11,13 @@ import {
   compositeMirroredVideoWithOverlay,
   makeCaptureFilename,
   tryShareOrDownload,
-} from './hooks/saveAlignedComposite'
-import { useCamera } from './hooks/useCamera'
-import { usePoseVariants } from './hooks/usePoseVariants'
-import { useOnboarding } from './hooks/useOnboarding'
-import { PoseOverlay } from './components/PoseOverlay'
+} from '@/hooks/saveAlignedComposite'
+import { useCamera } from '@/hooks/useCamera'
+import { usePoseVariants } from '@/hooks/usePoseVariants'
+import { useOnboarding } from '@/hooks/useOnboarding'
+import { PoseOverlay } from '@/components/PoseOverlay'
 import { Button } from '@/components/ui/button'
-import './App.css'
+import { Navigate } from '@tanstack/react-router'
 
 const GALLERY_SHEET_PEEK_PX = 80
 
@@ -27,21 +27,22 @@ interface SessionCapture {
   previewUrl: string
 }
 
-function App() {
+export function CameraPage() {
+  const { done: onboardingDone } = useOnboarding()
+
+  if (!onboardingDone) {
+    return <Navigate to="/" replace />
+  }
+
+  return <CameraPageContent />
+}
+
+function CameraPageContent() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const poseOverlayCanvasRef = useRef<HTMLCanvasElement>(null)
   const { state: cameraState, request: requestCamera } = useCamera(videoRef)
 
   const poseVariants = usePoseVariants()
-  const {
-    done: onboardingDone,
-    files,
-    setFiles,
-    allowLearning,
-    setAllowLearning,
-    skip: skipOnboarding,
-    mutation: onboardingMutation,
-  } = useOnboarding()
 
   const poses = useMemo(() => poseVariants.data ?? [], [poseVariants.data])
   const outlines = poseVariants.outlines
@@ -287,82 +288,6 @@ function App() {
           ? cameraState.message
           : ''
 
-  if (!onboardingDone) {
-    return (
-      <div className="min-h-screen min-h-dvh w-full max-w-none overflow-x-hidden">
-        <main className="stage-two-shell">
-          <section className="camera-preview">
-            <div className="camera-launch">
-              <div className="launch-mark" aria-hidden="true" />
-              <p className="launch-kicker">Taste onboarding</p>
-              <h1>Pick up to 5 gallery photos.</h1>
-              <p>
-                We use your selected images to learn your style and improve
-                generated pose prompts for this account.
-              </p>
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                multiple
-                onChange={(e) =>
-                  setFiles(Array.from(e.target.files ?? []).slice(0, 5))
-                }
-                disabled={onboardingMutation.isPending}
-              />
-              <p>{files.length}/5 selected</p>
-              <label className="mt-2 flex max-w-[min(340px,92vw)] cursor-pointer items-start gap-2 text-left text-[0.9rem] leading-snug text-cam-ink-muted">
-                <input
-                  type="checkbox"
-                  className="mt-1 shrink-0"
-                  checked={allowLearning}
-                  onChange={(e) => setAllowLearning(e.target.checked)}
-                  disabled={onboardingMutation.isPending}
-                />
-                <span>
-                  Allow using my selected photos to learn my style for pose
-                  suggestions (uploaded to the server for analysis).
-                </span>
-              </label>
-              {onboardingMutation.isError && (
-                <p className="error">
-                  {onboardingMutation.error instanceof Error
-                    ? onboardingMutation.error.message
-                    : 'Upload failed.'}
-                </p>
-              )}
-              {onboardingMutation.isSuccess && !onboardingMutation.data.ok && (
-                <p className="error">{onboardingMutation.data.message}</p>
-              )}
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  onClick={() => onboardingMutation.mutate()}
-                  disabled={
-                    onboardingMutation.isPending ||
-                    files.length === 0 ||
-                    !allowLearning
-                  }
-                >
-                  {onboardingMutation.isPending
-                    ? 'Uploading...'
-                    : 'Use selected photos'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={skipOnboarding}
-                  disabled={onboardingMutation.isPending}
-                >
-                  Skip for now
-                </Button>
-              </div>
-            </div>
-          </section>
-        </main>
-      </div>
-    )
-  }
-
   return (
     <div className="min-h-screen min-h-dvh w-full max-w-none overflow-x-hidden">
       <main className="stage-two-shell">
@@ -583,5 +508,3 @@ function App() {
     </div>
   )
 }
-
-export default App

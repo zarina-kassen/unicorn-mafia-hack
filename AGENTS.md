@@ -33,8 +33,10 @@ Auth is handled by **Clerk** (`@clerk/react` on the frontend,
 │   └── pyproject.toml
 ├── frontend/
 │   ├── src/
-│   │   ├── App.tsx           # Main application & state coordinator
-│   │   ├── main.tsx          # React root with Clerk + React Query providers
+│   │   ├── main.tsx          # React root: Clerk, Query, TanStack Router
+│   │   ├── router.tsx        # TanStack Router instance
+│   │   ├── routes/           # File-based routes (__root, index, camera)
+│   │   ├── pages/            # OnboardingPage, CameraPage
 │   │   ├── pose/             # MediaPipe integration, template matching
 │   │   ├── overlay/          # Canvas-based skeletal rendering
 │   │   ├── camera/           # Webcam hook (useCamera)

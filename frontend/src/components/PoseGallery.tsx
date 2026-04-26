@@ -42,12 +42,10 @@ export function PoseGallery({
         side="bottom"
         showCloseButton
         className={cn(
+          /* Bottom sheet at every breakpoint — slides up from the bottom edge. */
           'gap-0 border-cam-hairline bg-popover/95 p-0',
           'max-h-[min(88dvh,720px)] rounded-t-3xl',
           'pb-[env(safe-area-inset-bottom,0px)]',
-          /* From md+ center the sheet and cap its width like a desktop modal. */
-          'md:!inset-x-auto md:left-1/2 md:!-translate-x-1/2',
-          'md:!w-[min(640px,82vw)] md:!max-w-[640px]',
         )}
       >
         <SheetHeader className="sr-only">

@@ -5,29 +5,18 @@ from __future__ import annotations
 import base64
 import json
 import logging
-import os
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Any
 
-from openai import OpenAI
+from openrouter import OpenRouter, components
+from openrouter.types import UNSET
 
 from .config import settings
 from .schemas import MemorySeedEntry
 
 logger = logging.getLogger(__name__)
 
-VISION_MODEL = os.getenv("ONBOARDING_VISION_MODEL", "openai/gpt-4.1-mini")
 MAX_TAGS_PER_FIELD = 5
-
-
-@lru_cache
-def _get_openai_client() -> OpenAI:
-    """Build an OpenAI-compatible client routed through OpenRouter."""
-    return OpenAI(
-        api_key=settings.openrouter_api_key,
-        base_url=settings.openrouter_base_url,
-    )
 
 
 @dataclass(frozen=True)
@@ -86,27 +75,58 @@ def _prompt_for(filename: str) -> str:
     )
 
 
-def _extract_single(
-    client: OpenAI, image: OnboardingImageInput
+def _extract_text(result: components.ChatResult) -> str:
+    """Extract plain text from an OpenRouter chat result."""
+    if not result.choices:
+        raise RuntimeError("No choices in chat completion response")
+    message = result.choices[0].message
+    raw = message.content
+    if raw is None or raw is UNSET:
+        raise RuntimeError("No text content in assistant message")
+    if isinstance(raw, str):
+        text = raw.strip()
+        if text:
+            return text
+        raise RuntimeError("Empty assistant text content")
+    if isinstance(raw, list):
+        parts: list[str] = []
+        for item in raw:
+            if isinstance(item, components.ChatContentText):
+                parts.append(item.text or "")
+            elif isinstance(item, dict) and item.get("type") == "text":
+                parts.append(str(item.get("text", "")))
+        text = "".join(parts).strip()
+        if text:
+            return text
+    raise RuntimeError("Could not extract text from assistant message")
+
+
+async def _extract_single(
+    client: OpenRouter, image: OnboardingImageInput
 ) -> MemorySeedEntry | None:
     b64 = base64.b64encode(image.data).decode("ascii")
     data_url = f"data:{image.content_type};base64,{b64}"
     try:
-        # Use the standard chat completions API instead of responses API for better type compatibility
-        response = client.chat.completions.create(
-            model=VISION_MODEL,
+        response = await client.chat.send_async(
+            model=settings.onboarding_vision_model,
             messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": _prompt_for(image.filename)},
-                        {"type": "image_url", "image_url": {"url": data_url}},
+                components.ChatUserMessage(
+                    role="user",
+                    content=[
+                        components.ChatContentText(
+                            type="text", text=_prompt_for(image.filename)
+                        ),
+                        components.ChatContentImage(
+                            type="image_url",
+                            image_url=components.ChatContentImageImageURL(url=data_url),
+                        ),
                     ],
-                }
+                )
             ],
-            response_format={"type": "json_object"},
+            response_format=components.FormatJSONObjectConfig(type="json_object"),
+            stream=False,
         )
-        text = (response.choices[0].message.content or "").strip()
+        text = _extract_text(response)
         if not text:
             return None
         parsed = json.loads(text)
@@ -118,7 +138,8 @@ def _extract_single(
         return None
 
 
-def extract_memory_seed_entries(
+async def extract_memory_seed_entries(
+    client: OpenRouter,
     images: list[OnboardingImageInput],
 ) -> list[MemorySeedEntry]:
     """Convert uploaded onboarding images into memory seed entries.
@@ -128,10 +149,9 @@ def extract_memory_seed_entries(
     """
     if not images:
         return []
-    client = _get_openai_client()
     entries: list[MemorySeedEntry] = []
     for image in images:
-        entry = _extract_single(client, image)
+        entry = await _extract_single(client, image)
         if entry is None:
             continue
         entries.append(entry)

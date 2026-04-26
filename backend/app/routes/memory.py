@@ -5,8 +5,10 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from openrouter import OpenRouter
 
 from ..auth.clerk import require_auth
+from ..dependencies import get_openrouter_client
 from ..memory_onboarding import OnboardingImageInput, extract_memory_seed_entries
 from ..mubit_memory import get_mubit_memory
 from ..schemas import (
@@ -27,6 +29,7 @@ async def seed_memory_onboarding_images(
     images: list[UploadFile] = File(...),
     allow_camera_roll: bool = Form(default=True),
     user_id: str = Depends(require_auth),
+    client: OpenRouter = Depends(get_openrouter_client),
 ) -> MemoryStatusResponse:
     if not images:
         raise HTTPException(status_code=400, detail="at least one image is required")
@@ -66,7 +69,7 @@ async def seed_memory_onboarding_images(
         allow_pinterest=False,
     )
     try:
-        entries = extract_memory_seed_entries(prepared)
+        entries = await extract_memory_seed_entries(client, prepared)
     except Exception as exc:
         logger.exception("Onboarding image extraction failed for user=%s", user_id)
         raise HTTPException(

@@ -13,7 +13,6 @@ import {
   tryShareOrDownload,
 } from '@/hooks/saveAlignedComposite'
 import { useCamera } from '@/hooks/useCamera'
-import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { usePoseVariants } from '@/hooks/usePoseVariants'
 import { CameraFrame } from '@/components/CameraFrame'
 import { CameraLaunch } from '@/components/CameraLaunch'
@@ -21,7 +20,6 @@ import { CameraTopBar } from '@/components/CameraTopBar'
 import { PoseGallery } from '@/components/PoseGallery'
 import { PoseOverlay } from '@/components/PoseOverlay'
 import { ShutterDock } from '@/components/ShutterDock'
-import { cn } from '@/lib/utils'
 
 interface SessionCapture {
   id: string
@@ -34,7 +32,6 @@ export function CameraScreen() {
   const poseOverlayCanvasRef = useRef<HTMLCanvasElement>(null)
   const { state: cameraState, request: requestCamera } = useCamera(videoRef)
   const poseVariants = usePoseVariants()
-  const isMdUp = useMediaQuery('(min-width: 768px)')
 
   const poses = useMemo(() => poseVariants.data ?? [], [poseVariants.data])
   const outlines = poseVariants.outlines
@@ -58,7 +55,7 @@ export function CameraScreen() {
     cameraState.status === 'ready' &&
     (galleryBusy || poses.length > 0 || poseVariants.isError)
 
-  const [mobileGalleryOpen, setMobileGalleryOpen] = useState(false)
+  const [galleryOpen, setGalleryOpen] = useState(false)
   const [shutterFlashActive, setShutterFlashActive] = useState(false)
   const [generateFlashActive, setGenerateFlashActive] = useState(false)
   const [sessionCaptures, setSessionCaptures] = useState<SessionCapture[]>([])
@@ -102,17 +99,14 @@ export function CameraScreen() {
       setGenerateFlashActive(true)
     }
     setSelectedId(null)
-    if (!isMdUp) setMobileGalleryOpen(true)
+    setGalleryOpen(true)
     poseVariants.mutate(videoRef.current)
-  }, [cameraState.status, galleryBusy, poseVariants, isMdUp])
+  }, [cameraState.status, galleryBusy, poseVariants])
 
-  const handleSelectPose = useCallback(
-    (id: string) => {
-      setSelectedId(id)
-      if (!isMdUp) setMobileGalleryOpen(false)
-    },
-    [isMdUp],
-  )
+  const handleSelectPose = useCallback((id: string) => {
+    setSelectedId(id)
+    setGalleryOpen(false)
+  }, [])
 
   const poseIndex = useMemo(() => {
     if (poses.length === 0) return -1
@@ -230,82 +224,61 @@ export function CameraScreen() {
   }
 
   return (
-    <div
-      className={cn(
-        'relative min-h-dvh w-full overflow-x-hidden',
-        /* md+: two-column layout (preview | gallery). Preview is the hero. */
-        'md:mx-auto md:grid md:h-dvh md:max-h-dvh md:max-w-6xl md:grid-cols-[minmax(0,1fr)_320px] md:items-stretch md:gap-6 md:px-4 md:py-4',
-        'lg:grid-cols-[minmax(0,1fr)_380px]',
-      )}
-    >
-      <div className="relative md:flex md:min-h-0 md:flex-col md:justify-center">
-        <div className="relative h-dvh w-full md:h-auto md:min-h-0">
-          <CameraFrame
-            videoRef={videoRef}
-            shutterFlashActive={shutterFlashActive}
-            onShutterFlashEnd={() => setShutterFlashActive(false)}
-            generateFlashActive={generateFlashActive}
-            onGenerateFlashEnd={() => setGenerateFlashActive(false)}
-            overlay={
-              cameraState.status === 'ready' && selectedPose ? (
-                <PoseOverlay
-                  ref={poseOverlayCanvasRef}
-                  key={selectedPose.id}
-                  videoRef={videoRef}
-                  outline={outlines[selectedPose.id] ?? null}
-                  photoMaskUrl={poseVariants.maskUrls[selectedPose.id] ?? null}
-                />
-              ) : null
-            }
+    <div className="relative h-dvh w-full overflow-hidden">
+      <CameraFrame
+        videoRef={videoRef}
+        shutterFlashActive={shutterFlashActive}
+        onShutterFlashEnd={() => setShutterFlashActive(false)}
+        generateFlashActive={generateFlashActive}
+        onGenerateFlashEnd={() => setGenerateFlashActive(false)}
+        overlay={
+          cameraState.status === 'ready' && selectedPose ? (
+            <PoseOverlay
+              ref={poseOverlayCanvasRef}
+              key={selectedPose.id}
+              videoRef={videoRef}
+              outline={outlines[selectedPose.id] ?? null}
+              photoMaskUrl={poseVariants.maskUrls[selectedPose.id] ?? null}
+            />
+          ) : null
+        }
+      />
+
+      {cameraState.status === 'ready' && (
+        <>
+          <CameraTopBar
+            className="absolute left-3 right-3 top-[max(12px,env(safe-area-inset-top,0px))] z-20 md:left-4 md:right-4 md:top-4"
+            generationLabel={generationCopy}
+            galleryBusy={galleryBusy}
+            onGenerate={handleGenerate}
+            onPrevPose={onPrevPose}
+            onNextPose={onNextPose}
+            onClearSelection={onClearSelection}
+            poseCount={poses.length}
           />
 
-          {cameraState.status === 'ready' && (
-            <>
-              <CameraTopBar
-                className="absolute left-3 right-3 top-[max(12px,env(safe-area-inset-top,0px))] z-20 md:left-4 md:right-4 md:top-4"
-                generationLabel={generationCopy}
-                galleryBusy={galleryBusy}
-                onGenerate={handleGenerate}
-                onPrevPose={onPrevPose}
-                onNextPose={onNextPose}
-                onClearSelection={onClearSelection}
-                poseCount={poses.length}
-              />
+          <ShutterDock
+            canTakePicture={canTakePicture}
+            onShutter={onShutterClick}
+            lastCapturePreviewUrl={lastSessionCapture?.previewUrl ?? null}
+            onSaveLastAgain={onSaveLastCaptureAgain}
+            onOpenGallery={() => setGalleryOpen(true)}
+          />
+        </>
+      )}
 
-              <ShutterDock
-                canTakePicture={canTakePicture}
-                onShutter={onShutterClick}
-                lastCapturePreviewUrl={lastSessionCapture?.previewUrl ?? null}
-                onSaveLastAgain={onSaveLastCaptureAgain}
-                onOpenGallery={() => setMobileGalleryOpen(true)}
-              />
-            </>
-          )}
-
-          {cameraState.status !== 'ready' && (
-            <CameraLaunch
-              cameraState={cameraState}
-              onRequestCamera={requestCamera}
-            />
-          )}
-        </div>
-      </div>
-
-      {isMdUp && galleryVisible ? (
-        <PoseGallery
-          variant="desktop-sidebar"
-          {...galleryPanelProps}
-          layout="vertical"
+      {cameraState.status !== 'ready' && (
+        <CameraLaunch
+          cameraState={cameraState}
+          onRequestCamera={requestCamera}
         />
-      ) : null}
+      )}
 
-      {!isMdUp && galleryVisible ? (
+      {galleryVisible ? (
         <PoseGallery
-          variant="mobile-sheet"
-          open={mobileGalleryOpen}
-          onOpenChange={setMobileGalleryOpen}
+          open={galleryOpen}
+          onOpenChange={setGalleryOpen}
           {...galleryPanelProps}
-          layout="horizontal"
         />
       ) : null}
     </div>

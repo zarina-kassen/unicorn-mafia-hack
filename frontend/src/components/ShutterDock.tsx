@@ -13,7 +13,7 @@ interface ShutterDockProps {
   onShutter: () => void
   lastCapturePreviewUrl: string | null
   onSaveLastAgain: () => void
-  /** Opens the mobile pose-gallery sheet. Only rendered on mobile. */
+  /** Opens the pose-gallery sheet. */
   onOpenGallery: () => void
   className?: string
 }
@@ -80,7 +80,6 @@ export function ShutterDock({
           <TooltipContent>Capture aligned photo</TooltipContent>
         </Tooltip>
 
-        {/* Mobile-only: gallery toggle. Desktop shows the gallery as a sidebar. */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -88,7 +87,7 @@ export function ShutterDock({
               variant="outline"
               size="icon"
               onClick={() => onOpenGallery()}
-              className="size-[52px] shrink-0 overflow-hidden rounded-full border-[2.5px] border-white/90 bg-black/55 p-0 text-white shadow-lg hover:bg-black/65 md:invisible md:pointer-events-none"
+              className="size-[52px] shrink-0 overflow-hidden rounded-full border-[2.5px] border-white/90 bg-black/55 p-0 text-white shadow-lg hover:bg-black/65"
               aria-label="Open pose gallery"
             >
               <Images className="size-5" />

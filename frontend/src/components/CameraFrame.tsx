@@ -26,11 +26,8 @@ export function CameraFrame({
     <div
       className={cn(
         'relative isolate overflow-hidden bg-cam-surface',
-        /* Mobile: full-bleed portrait fills the viewport. */
-        /* md+: landscape hero, fills the column, bounded by viewport height. */
-        'h-full min-h-0 w-full md:h-auto',
-        'md:mx-auto md:aspect-video md:w-full md:max-h-[min(80dvh,820px)]',
-        'md:rounded-3xl md:border md:border-cam-hairline md:shadow-cam-preview',
+        /* Camera always fills the viewport at every breakpoint. */
+        'h-full min-h-0 w-full',
         className,
       )}
     >
